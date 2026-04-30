@@ -3,6 +3,10 @@ export type ProviderId = string;
 
 export type ProviderSelectionMode = 'configured' | 'fallback' | 'first';
 export type ProviderPreferenceMap = Partial<Record<CapabilityId, ProviderId>>;
+export type ProviderPreferenceCollectionInput<T> = {
+  items: Iterable<T>;
+  getProviderPreferences: (item: T) => unknown;
+};
 
 export type ProviderSelection = {
   capabilityId: CapabilityId;
@@ -46,6 +50,10 @@ export type ResolveItemProviderSelectionInput<T> = ProviderCollectionInput<T> & 
 
 function toSortedUniqueProviderIds(providerIds: Iterable<ProviderId>): ProviderId[] {
   return Array.from(new Set(Array.from(providerIds).filter(Boolean))).sort();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function getSelectedProvider(input: {
@@ -184,6 +192,29 @@ export function collectProvidersByCapability<T>(
   }
 
   return providersByCapability;
+}
+
+export function collectProviderPreferences<T>(
+  input: ProviderPreferenceCollectionInput<T>,
+): ProviderPreferenceMap {
+  let preferences: ProviderPreferenceMap = {};
+
+  for (const item of input.items) {
+    const value = input.getProviderPreferences(item);
+
+    if (!isRecord(value)) continue;
+
+    preferences = {
+      ...preferences,
+      ...Object.fromEntries(
+        Object.entries(value).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].length > 0,
+        ),
+      ),
+    };
+  }
+
+  return preferences;
 }
 
 export function resolveProviderSelection(

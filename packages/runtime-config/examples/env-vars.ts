@@ -7,19 +7,19 @@ import {
 const envVars = toRuntimeEnvVars(
   {
     public: {
-      billingApiBase: '/api/billing',
+      checkoutSuccessPath: '/orders/confirmed',
     },
     private: {
-      billingApiSecret: 'secret',
+      checkoutSigningSecret: 'checkout_signing_secret_demo',
     },
   },
   'APP',
 );
 
 console.log(runtimeEnvVarsToString(envVars));
-// APP_PUBLIC_BILLING_API_BASE=/api/billing
-// APP_PRIVATE_BILLING_API_SECRET=secret
+// APP_PUBLIC_CHECKOUT_SUCCESS_PATH=/orders/confirmed
+// APP_PRIVATE_CHECKOUT_SIGNING_SECRET=checkout_signing_secret_demo
 
 console.log(runtimeEnvVarsToShellAssignments(envVars));
-// APP_PUBLIC_BILLING_API_BASE='"/api/billing"'
-// APP_PRIVATE_BILLING_API_SECRET='"secret"'
+// APP_PUBLIC_CHECKOUT_SUCCESS_PATH='"/orders/confirmed"'
+// APP_PRIVATE_CHECKOUT_SIGNING_SECRET='"checkout_signing_secret_demo"'

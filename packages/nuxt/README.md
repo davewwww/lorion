@@ -54,12 +54,6 @@ Use `@lorion-org/nuxt` when:
 - not a schema validator
 - not an application naming policy
 
-## Compatibility
-
-| Package version | Nuxt 3            | Nuxt 4    | Test status                        |
-| --------------- | ----------------- | --------- | ---------------------------------- |
-| `0.1.x`         | not supported yet | supported | CI-tested locally against Nuxt 4.x |
-
 ## Extension model
 
 The module uses one `lorion` config key. By default it discovers `extension.json`
@@ -169,12 +163,12 @@ export default defineNuxtConfig({
   lorion: {
     runtimeConfig: {
       fragments: {
-        billing: {
+        checkout: {
           public: {
-            apiBase: '/api/billing',
+            successPath: '/orders/confirmed',
           },
           private: {
-            apiSecret: 'secret',
+            signingSecret: 'checkout_signing_secret_demo',
           },
         },
       },
@@ -192,10 +186,10 @@ The module also auto-imports runtime-config composables unless
 `runtimeConfig.imports` is `false`.
 
 ```ts
-const billing = usePublicRuntimeConfigScope('billing');
+const checkout = usePublicRuntimeConfigScope('checkout');
 
-billing.apiBase;
-// => '/api/billing'
+checkout.successPath;
+// => '/orders/confirmed'
 ```
 
 Configured module options such as `contextOutputKey` and `privateOutput` are
@@ -365,9 +359,9 @@ export default defineNuxtConfig({
   lorion: {
     runtimeConfig: {
       fragments: {
-        billing: {
+        checkout: {
           public: {
-            apiBase: '/api/billing',
+            successPath: '/orders/confirmed',
           },
         },
       },
@@ -402,7 +396,7 @@ Directory shape:
 ```text
 var/
   runtime-config/
-    billing/
+    checkout/
       runtime.config.json
 ```
 
@@ -414,8 +408,8 @@ export default defineNuxtConfig({
   modules: ['@lorion-org/nuxt'],
   lorion: {
     runtimeConfig: {
-      contextInputKey: 'tenants',
-      contextOutputKey: '__tenants',
+      contextInputKey: 'stores',
+      contextOutputKey: '__stores',
       source: {
         paths: ['var/runtime-config/*/runtime.config.json'],
       },

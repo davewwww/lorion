@@ -3,48 +3,48 @@ import {
   projectRuntimeConfigNamespaces,
 } from '@lorion-org/runtime-config';
 
-const billingRuntimeConfig = projectRuntimeConfigNamespace('billing', {
+const checkoutRuntimeConfig = projectRuntimeConfigNamespace('checkout', {
   public: {
-    apiBase: '/api/billing',
+    successPath: '/orders/confirmed',
   },
   private: {
-    token: 'billing-token',
+    signingSecret: 'checkout_signing_secret_demo',
   },
 });
 
-console.log(billingRuntimeConfig.public.billing);
-// { apiBase: '/api/billing' }
+console.log(checkoutRuntimeConfig.public.checkout);
+// { successPath: '/orders/confirmed' }
 
-console.log(billingRuntimeConfig.billing);
-// { token: 'billing-token' }
+console.log(checkoutRuntimeConfig.checkout);
+// { signingSecret: 'checkout_signing_secret_demo' }
 
 const combinedRuntimeConfig = projectRuntimeConfigNamespaces([
   {
-    scopeId: 'billing',
+    scopeId: 'checkout',
     config: {
       public: {
-        apiBase: '/api/billing',
+        successPath: '/orders/confirmed',
       },
       private: {
-        token: 'billing-token',
+        signingSecret: 'checkout_signing_secret_demo',
       },
     },
   },
   {
-    scopeId: 'mail',
+    scopeId: 'payments',
     config: {
       public: {
-        apiBase: '/api/mail',
+        configuredProvider: 'payment-provider-stripe',
       },
     },
   },
 ]);
 
-console.log(combinedRuntimeConfig.public.billing);
-// { apiBase: '/api/billing' }
+console.log(combinedRuntimeConfig.public.checkout);
+// { successPath: '/orders/confirmed' }
 
-console.log(combinedRuntimeConfig.public.mail);
-// { apiBase: '/api/mail' }
+console.log(combinedRuntimeConfig.public.payments);
+// { configuredProvider: 'payment-provider-stripe' }
 
-console.log(combinedRuntimeConfig.billing);
-// { token: 'billing-token' }
+console.log(combinedRuntimeConfig.checkout);
+// { signingSecret: 'checkout_signing_secret_demo' }

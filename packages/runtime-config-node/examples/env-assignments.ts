@@ -3,12 +3,12 @@ import {
   writeRuntimeConfigFragment,
 } from '@lorion-org/runtime-config-node';
 
-writeRuntimeConfigFragment('./var', 'billing', {
+writeRuntimeConfigFragment('./var', 'checkout', {
   public: {
-    apiBase: '/api/billing',
+    successPath: '/orders/confirmed',
   },
   private: {
-    token: 'billing-token',
+    signingSecret: 'checkout_signing_secret_demo',
   },
 });
 
@@ -17,5 +17,5 @@ const assignments = loadRuntimeConfigShellAssignments('./var', {
 });
 
 console.log(assignments);
-// APP_PUBLIC_BILLING_API_BASE='"/api/billing"'
-// APP_PRIVATE_BILLING_TOKEN='"billing-token"'
+// APP_PUBLIC_CHECKOUT_SUCCESS_PATH='"/orders/confirmed"'
+// APP_PRIVATE_CHECKOUT_SIGNING_SECRET='"checkout_signing_secret_demo"'

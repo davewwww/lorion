@@ -6,7 +6,8 @@ Package-level documentation lives in each package README under
 
 LORION is organized as a set of independent libraries and adapters. Core
 packages stay framework-free, Node packages add server-side helpers, and
-framework adapters compose those capabilities for runtimes such as Nuxt.
+framework adapters compose those capabilities for runtimes such as Nuxt and
+React.
 
 ## Standards
 
@@ -20,6 +21,7 @@ framework adapters compose those capabilities for runtimes such as Nuxt.
 - [composition-graph](../packages/composition-graph/README.md)
 - [descriptor-discovery](../packages/descriptor-discovery/README.md)
 - [provider-selection](../packages/provider-selection/README.md)
+- [react](../packages/react/README.md)
 - [registry-hub](../packages/registry-hub/README.md)
 - [runtime-config](../packages/runtime-config/README.md)
 - [runtime-config-node](../packages/runtime-config-node/README.md)

@@ -34,9 +34,9 @@ pnpm add @lorion-org/runtime-config-node @lorion-org/runtime-config
 ```text
 var/
   runtime-config/
-    billing/
+    checkout/
       runtime.config.json
-    mail/
+    payments/
       runtime.config.json
 ```
 
@@ -49,7 +49,7 @@ import { projectSectionedRuntimeConfig } from '@lorion-org/runtime-config';
 const fragments = loadRuntimeConfigTree('./var');
 const runtimeConfig = projectSectionedRuntimeConfig(fragments);
 
-runtimeConfig.public.billingApiBase;
+runtimeConfig.public.checkoutSuccessPath;
 ```
 
 ## Single fragment example
@@ -57,9 +57,9 @@ runtimeConfig.public.billingApiBase;
 ```ts
 import { loadRuntimeConfigFragment } from '@lorion-org/runtime-config-node';
 
-const billing = loadRuntimeConfigFragment('./var', 'billing');
+const checkout = loadRuntimeConfigFragment('./var', 'checkout');
 
-billing?.public?.apiBase;
+checkout?.public?.successPath;
 ```
 
 ## Source and scope file example
@@ -81,11 +81,11 @@ const source = resolveRuntimeConfigSource({
   envKey: 'APP_VAR_DIR',
 });
 
-readRuntimeConfigScopeJson(source, 'billing', 'settings.json');
-// => { apiBase: '/api/billing' }
+readRuntimeConfigScopeJson(source, 'checkout', 'settings.json');
+// => { successPath: '/orders/confirmed' }
 
-resolveRuntimeConfigPublicFilePath(source, 'billing/logo.svg');
-// => '/absolute/project/path/var/runtime-config/public/billing/logo.svg'
+resolveRuntimeConfigPublicFilePath(source, 'checkout/logo.svg');
+// => '/absolute/project/path/var/runtime-config/public/checkout/logo.svg'
 ```
 
 ## Pattern source example
@@ -106,12 +106,12 @@ const source = {
 };
 
 resolveRuntimeConfigSourceFiles(source);
-// => [{ scopeId: 'billing', configPath: '/project/.runtimeconfig/runtime-config/billing/runtime.config.json', ... }]
+// => [{ scopeId: 'checkout', configPath: '/project/.runtimeconfig/runtime-config/checkout/runtime.config.json', ... }]
 
-loadRuntimeConfigSourceTree(source).get('billing')?.public?.apiBase;
-// => '/api/billing'
+loadRuntimeConfigSourceTree(source).get('checkout')?.public?.successPath;
+// => '/orders/confirmed'
 
-validateRuntimeConfigSourceScopes(source, [{ scopeId: 'billing', cwd: './extensions/billing' }]);
+validateRuntimeConfigSourceScopes(source, [{ scopeId: 'checkout', cwd: './extensions/checkout' }]);
 ```
 
 ## Write fragment example
@@ -119,9 +119,9 @@ validateRuntimeConfigSourceScopes(source, [{ scopeId: 'billing', cwd: './extensi
 ```ts
 import { writeRuntimeConfigFragment } from '@lorion-org/runtime-config-node';
 
-writeRuntimeConfigFragment('./var', 'billing', {
+writeRuntimeConfigFragment('./var', 'checkout', {
   public: {
-    apiBase: '/api/billing',
+    successPath: '/orders/confirmed',
   },
 });
 ```
@@ -137,7 +137,7 @@ import { loadRuntimeConfigShellAssignments } from '@lorion-org/runtime-config-no
 loadRuntimeConfigShellAssignments('./var', {
   prefix: 'APP',
 });
-// => APP_PUBLIC_BILLING_API_BASE='"/api/billing"'
+// => APP_PUBLIC_CHECKOUT_SUCCESS_PATH='"/orders/confirmed"'
 ```
 
 ## Tree query example
@@ -154,16 +154,16 @@ import {
 } from '@lorion-org/runtime-config-node';
 
 listRuntimeConfigFragments('./var');
-// => { scopes: [{ scopeId: 'billing', ... }] }
+// => { scopes: [{ scopeId: 'checkout', ... }] }
 
-projectRuntimeConfigTree('./var').runtimeConfig.public.billingApiBase;
-// => '/api/billing'
+projectRuntimeConfigTree('./var').runtimeConfig.public.checkoutSuccessPath;
+// => '/orders/confirmed'
 
-getRuntimeConfigValue('./var', 'billing', 'apiBase').value;
-// => '/api/billing'
+getRuntimeConfigValue('./var', 'checkout', 'successPath').value;
+// => '/orders/confirmed'
 
-getRuntimeConfigScopeView('./var', 'billing').config;
-// => { apiBase: '/api/billing' }
+getRuntimeConfigScopeView('./var', 'checkout').config;
+// => { successPath: '/orders/confirmed' }
 ```
 
 ## Schema validation example
@@ -176,9 +176,9 @@ import { validateRuntimeConfigSchemaTargets } from '@lorion-org/runtime-config-n
 
 validateRuntimeConfigSchemaTargets([
   {
-    scopeId: 'billing',
-    schemaPath: './schemas/billing.schema.json',
-    configPath: './var/runtime-config/billing/runtime.config.json',
+    scopeId: 'checkout',
+    schemaPath: './schemas/checkout.schema.json',
+    configPath: './var/runtime-config/checkout/runtime.config.json',
   },
 ]);
 ```

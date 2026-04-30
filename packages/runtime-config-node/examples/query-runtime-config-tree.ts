@@ -6,17 +6,17 @@ import {
   writeRuntimeConfigFragment,
 } from '@lorion-org/runtime-config-node';
 
-writeRuntimeConfigFragment('./var', 'billing', {
+writeRuntimeConfigFragment('./var', 'checkout', {
   public: {
-    apiBase: '/api/billing',
+    successPath: '/orders/confirmed',
   },
   private: {
-    token: 'billing-token',
+    signingSecret: 'checkout_signing_secret_demo',
   },
   contexts: {
-    tenantA: {
+    'eu-store': {
       public: {
-        apiBase: '/tenant-a/billing',
+        successPath: '/eu-store/orders/confirmed',
       },
     },
   },
@@ -24,30 +24,30 @@ writeRuntimeConfigFragment('./var', 'billing', {
 
 const listResult = listRuntimeConfigFragments('./var');
 console.log(listResult.scopes);
-// [{ scopeId: 'billing', publicKeys: ['apiBase'], privateKeys: ['token'], contextIds: ['tenantA'], ... }]
+// [{ scopeId: 'checkout', publicKeys: ['successPath'], privateKeys: ['signingSecret'], contextIds: ['eu-store'], ... }]
 
 const projectResult = projectRuntimeConfigTree('./var', {
-  contextOutputKey: '__tenants',
+  contextOutputKey: '__stores',
 });
 console.log(projectResult.runtimeConfig.public);
 // {
-//   billingApiBase: '/api/billing',
-//   __tenants: {
-//     tenantA: {
-//       billingApiBase: '/tenant-a/billing',
+//   checkoutSuccessPath: '/orders/confirmed',
+//   __stores: {
+//     'eu-store': {
+//       checkoutSuccessPath: '/eu-store/orders/confirmed',
 //     },
 //   },
 // }
 
-const valueResult = getRuntimeConfigValue('./var', 'billing', 'apiBase', {
-  contextId: 'tenantA',
-  contextOutputKey: '__tenants',
+const valueResult = getRuntimeConfigValue('./var', 'checkout', 'successPath', {
+  contextId: 'eu-store',
+  contextOutputKey: '__stores',
 });
 console.log(valueResult.value);
-// /tenant-a/billing
+// /eu-store/orders/confirmed
 
-const scopeResult = getRuntimeConfigScopeView('./var', 'billing', {
+const scopeResult = getRuntimeConfigScopeView('./var', 'checkout', {
   visibility: 'private',
 });
 console.log(scopeResult.config);
-// { token: 'billing-token' }
+// { signingSecret: 'checkout_signing_secret_demo' }

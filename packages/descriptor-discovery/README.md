@@ -31,11 +31,11 @@ pnpm add @lorion-org/descriptor-discovery @lorion-org/composition-graph
 ## Directory shape
 
 ```text
-descriptors/
-  billing/
-    descriptor.json
-  dashboard/
-    descriptor.json
+layer-extensions/
+  checkout/
+    extension.json
+  shops/
+    extension.json
 ```
 
 ## Basic example
@@ -44,7 +44,8 @@ descriptors/
 import { discoverDescriptors } from '@lorion-org/descriptor-discovery';
 
 const discovered = discoverDescriptors({
-  roots: ['./descriptors'],
+  cwd: './playground',
+  descriptorPaths: ['layer-extensions/*/extension.json'],
 });
 
 const descriptors = discovered.map((entry) => entry.descriptor);
@@ -60,9 +61,8 @@ id when the descriptor does not define one.
 import { discoverDescriptors } from '@lorion-org/descriptor-discovery';
 
 const discovered = discoverDescriptors({
-  roots: ['./modules'],
-  descriptorFileName: 'module.json',
-  idField: 'name',
+  cwd: './playground',
+  descriptorPaths: ['layer-extensions/*/extension.json'],
   nestedField: 'bundles',
 });
 
@@ -79,7 +79,9 @@ import { createDescriptorCatalog } from '@lorion-org/composition-graph';
 import { discoverDescriptors } from '@lorion-org/descriptor-discovery';
 
 const discovered = discoverDescriptors({
-  roots: ['./descriptors'],
+  cwd: './playground',
+  descriptorPaths: ['layer-extensions/*/extension.json'],
+  nestedField: 'bundles',
 });
 
 const catalog = createDescriptorCatalog({
@@ -87,7 +89,7 @@ const catalog = createDescriptorCatalog({
 });
 
 catalog.resolveSelection({
-  selected: ['billing'],
+  selected: ['default'],
 });
 ```
 

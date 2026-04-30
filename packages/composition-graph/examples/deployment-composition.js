@@ -2,42 +2,48 @@
 import { createDescriptorCatalog } from '../dist/index.js';
 
 const catalog = createDescriptorCatalog({
-  relationDescriptors: [
-    {
-      id: 'integrations',
-      field: 'integrations',
-    },
-  ],
   descriptors: [
     {
-      id: 'billing',
+      id: 'web',
       version: '1.0.0',
-      dependencies: { storage: '*' },
-      integrations: { analytics: '*' },
+      dependencies: {
+        checkout: '^1.0.0',
+        payments: '^1.0.0',
+        'payment-provider-invoice': '^1.0.0',
+        'payment-provider-stripe': '^1.0.0',
+        shops: '^1.0.0',
+      },
     },
     {
-      id: 'storage',
+      id: 'checkout',
+      version: '1.0.0',
+      dependencies: { payments: '^1.0.0' },
+    },
+    {
+      id: 'payments',
       version: '1.0.0',
     },
     {
-      id: 'analytics',
+      id: 'shops',
       version: '1.0.0',
     },
     {
-      id: 'ui-shell',
+      id: 'payment-provider-invoice',
       version: '1.0.0',
-      dependencies: { router: '*' },
+      providesFor: 'payment-checkout',
+      dependencies: { payments: '^1.0.0' },
     },
     {
-      id: 'router',
+      id: 'payment-provider-stripe',
       version: '1.0.0',
+      providesFor: 'payment-checkout',
+      dependencies: { payments: '^1.0.0' },
     },
   ],
 });
 
 const selection = catalog.resolveSelection({
-  selected: ['billing'],
-  baseDescriptors: ['ui-shell'],
+  selected: ['web'],
 });
 
 process.stdout.write(`${selection.getResolved().join(', ')}\n`);

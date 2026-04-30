@@ -1,18 +1,19 @@
 import { createRegistry, type RegistryItem } from '@lorion-org/registry-hub';
 
-type FieldRenderer = RegistryItem & {
-  component: string;
+type Shop = RegistryItem & {
+  name: string;
+  path: string;
 };
 
-const renderers = createRegistry<FieldRenderer>('field-renderers');
+const shops = createRegistry<Shop>('shops');
 
-renderers.register([
-  { id: 'text', component: 'TextFieldRenderer' },
-  { id: 'date', component: 'DateFieldRenderer' },
+shops.register([
+  { id: 'shop-coffee', name: 'Bean Supply', path: '/shops/coffee' },
+  { id: 'shop-stationery', name: 'Paper Desk', path: '/shops/stationery' },
 ]);
 
-console.log(renderers.entries());
+console.log(shops.entries());
 // [
-//   ['text', { id: 'text', component: 'TextFieldRenderer' }],
-//   ['date', { id: 'date', component: 'DateFieldRenderer' }]
+//   ['shop-coffee', { id: 'shop-coffee', name: 'Bean Supply', path: '/shops/coffee' }],
+//   ['shop-stationery', { id: 'shop-stationery', name: 'Paper Desk', path: '/shops/stationery' }]
 // ]

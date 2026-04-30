@@ -7,46 +7,51 @@ import {
 
 const fragments: RuntimeConfigFragmentMap = new Map([
   [
-    'billing',
+    'checkout',
     {
       public: {
-        apiBase: '/api/billing',
+        successPath: '/orders/confirmed',
       },
       private: {
-        apiSecret: 'secret',
+        signingSecret: 'checkout_signing_secret_demo',
       },
       contexts: {
-        tenantA: {
+        'eu-store': {
           public: {
-            apiBase: '/tenant-a/billing',
+            successPath: '/eu-store/orders/confirmed',
           },
         },
       },
     },
   ],
   [
-    'mail',
+    'payments',
     {
       public: {
-        apiBase: '/api/mail',
+        configuredProvider: 'payment-provider-stripe',
       },
     },
   ],
 ]);
 
 const runtimeConfig = projectSectionedRuntimeConfig(fragments);
-const tenantApiBase = resolveRuntimeConfigValue(runtimeConfig.public, 'billing', 'apiBase', {
-  contextId: 'tenantA',
-});
+const euStoreSuccessPath = resolveRuntimeConfigValue(
+  runtimeConfig.public,
+  'checkout',
+  'successPath',
+  {
+    contextId: 'eu-store',
+  },
+);
 
-console.log(runtimeConfig.public.billingApiBase);
-// '/api/billing'
+console.log(runtimeConfig.public.checkoutSuccessPath);
+// '/orders/confirmed'
 
-console.log(runtimeConfig.private.billingApiSecret);
-// 'secret'
+console.log(runtimeConfig.private.checkoutSigningSecret);
+// 'checkout_signing_secret_demo'
 
-console.log(tenantApiBase);
-// '/tenant-a/billing'
+console.log(euStoreSuccessPath);
+// '/eu-store/orders/confirmed'
 
-console.log(getPublicRuntimeConfigScope(runtimeConfig, 'billing'));
-// { apiBase: '/api/billing' }
+console.log(getPublicRuntimeConfigScope(runtimeConfig, 'checkout'));
+// { successPath: '/orders/confirmed' }

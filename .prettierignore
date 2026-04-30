@@ -6,3 +6,4 @@ node_modules
 .nuxt
 .output
 pnpm-lock.yaml
+packages/react/playground/src/routeTree.gen.ts

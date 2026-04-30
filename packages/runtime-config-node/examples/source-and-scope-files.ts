@@ -11,14 +11,14 @@ const source = resolveRuntimeConfigSource({
   envKey: 'APP_VAR_DIR',
 });
 
-writeRuntimeConfigScopeJson(source, 'billing', 'settings.json', {
-  apiBase: '/api/billing',
+writeRuntimeConfigScopeJson(source, 'checkout', 'settings.json', {
+  successPath: '/orders/confirmed',
 });
 
-const settings = readRuntimeConfigScopeJson(source, 'billing', 'settings.json');
+const settings = readRuntimeConfigScopeJson(source, 'checkout', 'settings.json');
 console.log(settings);
-// { apiBase: '/api/billing' }
+// { successPath: '/orders/confirmed' }
 
-const logoPath = resolveRuntimeConfigPublicFilePath(source, 'billing/logo.svg');
+const logoPath = resolveRuntimeConfigPublicFilePath(source, 'checkout/logo.svg');
 console.log(logoPath);
-// /absolute/project/path/var/runtime-config/public/billing/logo.svg
+// /absolute/project/path/var/runtime-config/public/checkout/logo.svg

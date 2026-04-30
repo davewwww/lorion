@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  collectProviderPreferences,
   collectProvidersByCapability,
   resolveItemProviderSelection,
   resolveProviderSelection,
@@ -39,6 +40,35 @@ describe('collectProvidersByCapability', () => {
         ['mailer', ['mailer-postmark']],
       ]),
     );
+  });
+});
+
+describe('collectProviderPreferences', () => {
+  it('collects non-empty string preferences from provider descriptors', () => {
+    const preferences = collectProviderPreferences({
+      items: [
+        {
+          providerPreferences: {
+            auth: 'keycloak',
+            mailer: '',
+            search: 42,
+          },
+        },
+        {
+          providerPreferences: {
+            auth: 'auth-local-jwt',
+          },
+        },
+        {
+          providerPreferences: null,
+        },
+      ],
+      getProviderPreferences: (candidate) => candidate.providerPreferences,
+    });
+
+    expect(preferences).toEqual({
+      auth: 'auth-local-jwt',
+    });
   });
 });
 

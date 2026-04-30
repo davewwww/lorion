@@ -39,17 +39,21 @@ import { createRegistry, createRegistryHub } from '@lorion-org/registry-hub';
 ```ts
 import { createRegistry, type RegistryItem } from '@lorion-org/registry-hub';
 
-type Command = RegistryItem & {
-  command: string;
+type PaymentProvider = RegistryItem & {
+  createCheckoutPath: (input: { shopId: string }) => string;
 };
 
-const commands = createRegistry<Command>('commands');
+const paymentProviders = createRegistry<PaymentProvider>('payment-checkout-providers');
 
-commands.register({ id: 'build', command: 'pnpm build' });
+paymentProviders.register({
+  id: 'payment-provider-stripe',
+  createCheckoutPath: (input) =>
+    `/providers/payment-provider-stripe/checkout?shop=${encodeURIComponent(input.shopId)}`,
+});
 
-commands.get('build');
-commands.list();
-commands.entries();
+paymentProviders.get('payment-provider-stripe');
+paymentProviders.list();
+paymentProviders.entries();
 ```
 
 ### Use a registry hub
@@ -57,37 +61,38 @@ commands.entries();
 ```ts
 import { createRegistryHub, type RegistryItem } from '@lorion-org/registry-hub';
 
-type Tool = RegistryItem & {
-  title: string;
+type Shop = RegistryItem & {
+  path: string;
 };
 
 const hub = createRegistryHub();
 
-hub.createRegistry<Tool>('tools');
-hub.register<Tool>('tools', { id: 'lint', title: 'Lint workspace' });
+hub.createRegistry<Shop>('shops');
+hub.register<Shop>('shops', { id: 'shop-coffee', path: '/shops/coffee' });
 
-const tool = hub.get<Tool>('tools', 'lint');
-const tools = hub.list<Tool>('tools');
+const shop = hub.get<Shop>('shops', 'shop-coffee');
+const shops = hub.list<Shop>('shops');
 const registries = hub.entries();
 ```
 
-### Renderer registry example
+### Shop registry example
 
 ```ts
 import { createRegistry, type RegistryItem } from '@lorion-org/registry-hub';
 
-type FieldRenderer = RegistryItem & {
-  component: string;
+type Shop = RegistryItem & {
+  name: string;
+  path: string;
 };
 
-const renderers = createRegistry<FieldRenderer>('field-renderers');
+const shops = createRegistry<Shop>('shops');
 
-renderers.register([
-  { id: 'text', component: 'TextFieldRenderer' },
-  { id: 'date', component: 'DateFieldRenderer' },
+shops.register([
+  { id: 'shop-coffee', name: 'Bean Supply', path: '/shops/coffee' },
+  { id: 'shop-stationery', name: 'Paper Desk', path: '/shops/stationery' },
 ]);
 
-const knownRenderers = renderers.entries();
+const knownShops = shops.entries();
 ```
 
 ### Framework recipe
@@ -113,14 +118,16 @@ Another plugin can then consume that injected hub and register its own entries.
 ```ts
 import type { RegistryItem } from '@lorion-org/registry-hub';
 
-type Tool = RegistryItem & {
-  title: string;
+type Shop = RegistryItem & {
+  name: string;
+  path: string;
 };
 
 export default defineNuxtPlugin((nuxtApp) => {
-  nuxtApp.$registryHub.register<Tool>('tools', {
-    id: 'lint',
-    title: 'Lint workspace',
+  nuxtApp.$registryHub.register<Shop>('shops', {
+    id: 'shop-coffee',
+    name: 'Bean Supply',
+    path: '/shops/coffee',
   });
 });
 ```
@@ -130,18 +137,19 @@ A composable can later load all entries of one typed registry from that same hub
 ```ts
 import type { RegistryItem } from '@lorion-org/registry-hub';
 
-type Tool = RegistryItem & {
-  title: string;
+type Shop = RegistryItem & {
+  name: string;
+  path: string;
 };
 
-export function useTools(): Tool[] {
-  return useNuxtApp().$registryHub.list<Tool>('tools');
+export function useShops(): Shop[] {
+  return useNuxtApp().$registryHub.list<Shop>('shops');
 }
 ```
 
 Runnable example files live in [`examples/`](./examples).
 The Node example imports the published package name instead of local source files so it mirrors real consumer usage.
-The examples use neutral domain names so the package can be understood as a generic registry utility.
+The examples use the same shop and checkout-provider domain as the LORION playgrounds.
 
 ## Local commands
 

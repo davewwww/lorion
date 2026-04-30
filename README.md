@@ -8,11 +8,11 @@ descriptor-defined profiles, composes runtime configuration, selects capability
 providers, and lets framework adapters activate the resulting application
 shape.
 
-The primary integration target is `@lorion-org/nuxt`: a Nuxt 4 adapter that turns
-selected descriptors into active Nuxt layers and wires the resulting runtime
-configuration into the app. The surrounding packages keep the reusable pieces
-portable: graph resolution, descriptor discovery, provider selection, registries,
-and runtime-config projection.
+Framework adapters include `@lorion-org/nuxt` for Nuxt layer orchestration and
+`@lorion-org/react` for React capability runtimes, Vite discovery, and
+capability-owned route composition. The surrounding packages keep the reusable
+pieces portable: graph resolution, descriptor discovery, provider selection,
+registries, and runtime-config projection.
 
 ## Why LORION?
 
@@ -47,6 +47,7 @@ Install only the packages your project needs:
 ```shell
 pnpm add @lorion-org/runtime-config
 pnpm add @lorion-org/nuxt @lorion-org/runtime-config
+pnpm add @lorion-org/react react
 ```
 
 ## Quick Start
@@ -98,17 +99,31 @@ export default defineNuxtConfig({
 });
 ```
 
+Use the React adapter when a React application should discover local capability
+packages and expose their activation exports through Vite:
+
+```ts
+import { lorionReact } from '@lorion-org/react/vite';
+
+const lorion = lorionReact({
+  workspaceRoot,
+  routesDirectory,
+  selected: ['default'],
+});
+```
+
 ## Packages
 
-| Package                            | Purpose                                                              |
-| ---------------------------------- | -------------------------------------------------------------------- |
-| `@lorion-org/composition-graph`    | Descriptor, relation, and composition graph core.                    |
-| `@lorion-org/descriptor-discovery` | Node-side descriptor discovery helpers.                              |
-| `@lorion-org/provider-selection`   | Capability provider selection.                                       |
-| `@lorion-org/registry-hub`         | Generic runtime registry for named entries.                          |
-| `@lorion-org/runtime-config`       | Runtime config fragment projection, lookup, and environment helpers. |
-| `@lorion-org/runtime-config-node`  | File-system and loader helpers for runtime config.                   |
-| `@lorion-org/nuxt`                 | Main Nuxt adapter for descriptor-selected layer orchestration.       |
+| Package                            | Purpose                                                                                |
+| ---------------------------------- | -------------------------------------------------------------------------------------- |
+| `@lorion-org/composition-graph`    | Descriptor, relation, and composition graph core.                                      |
+| `@lorion-org/descriptor-discovery` | Node-side descriptor discovery helpers.                                                |
+| `@lorion-org/provider-selection`   | Capability provider selection.                                                         |
+| `@lorion-org/react`                | React capability runtime, contribution helpers, Vite discovery, and capability routes. |
+| `@lorion-org/registry-hub`         | Generic runtime registry for named entries.                                            |
+| `@lorion-org/runtime-config`       | Runtime config fragment projection, lookup, and environment helpers.                   |
+| `@lorion-org/runtime-config-node`  | File-system and loader helpers for runtime config.                                     |
+| `@lorion-org/nuxt`                 | Main Nuxt adapter for descriptor-selected layer orchestration.                         |
 
 Package-specific usage, API notes, and examples live in each package README
 under `packages/<name>/`.

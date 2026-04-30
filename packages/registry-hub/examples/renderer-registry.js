@@ -1,15 +1,15 @@
 import { createRegistry } from '@lorion-org/registry-hub';
 import process from 'node:process';
 
-const renderers = createRegistry('field-renderers');
+const shops = createRegistry('shops');
 
-renderers.register([
-  { id: 'text', component: 'TextFieldRenderer' },
-  { id: 'date', component: 'DateFieldRenderer' },
+shops.register([
+  { id: 'shop-coffee', name: 'Bean Supply', path: '/shops/coffee' },
+  { id: 'shop-stationery', name: 'Paper Desk', path: '/shops/stationery' },
 ]);
 
 process.stdout.write(
-  `${renderers.id}:${renderers
+  `${shops.id}:${shops
     .entries()
     .map(([id]) => id)
     .join(',')}\n`,

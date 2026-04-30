@@ -2,9 +2,8 @@ node_modules
 dist
 coverage
 .turbo
+.tanstack
 .artifacts
 *.tsbuildinfo
-.changeset/*.md
-!.changeset/README.md
 packages/nuxt/playground/.nuxt-*
 packages/nuxt/playground/.output-*

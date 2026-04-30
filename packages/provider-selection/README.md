@@ -3,9 +3,10 @@
 `@lorion-org/provider-selection` is a small framework-free core for selecting one
 provider per capability from multiple candidates.
 
-It solves four things:
+It solves six things:
 
 - collect provider candidates by capability
+- collect provider preferences from descriptors or config-like records
 - optionally collect and resolve in one call
 - pick one provider with configured and fallback preferences
 - report misconfigured provider selections
@@ -21,10 +22,12 @@ If a configured provider is set but not present among the candidates, the packag
 does not silently fall back. It reports a mismatch and leaves that capability
 unselected.
 
-Example files in this repository:
+Playground examples in this repository:
 
-- `examples/command-handlers.ts`
-- `examples/storage-drivers.ts`
+- `packages/nuxt/playground/layer-extensions/payment-provider-stripe/extension.json`
+- `packages/nuxt/playground/layer-extensions/payment-provider-invoice/extension.json`
+- `packages/react/playground/capabilities/payment-provider-stripe/capability.json`
+- `packages/react/playground/capabilities/payment-provider-invoice/capability.json`
 
 It does not know anything about:
 
@@ -47,17 +50,13 @@ import { resolveItemProviderSelection } from '@lorion-org/provider-selection';
 
 const result = resolveItemProviderSelection({
   items: [
-    { capability: 'auth', providerId: 'keycloak' },
-    { capability: 'auth', providerId: 'auth-local-jwt' },
-    { capability: 'mailer', providerId: 'mailer-postmark' },
+    { providesFor: 'payment-checkout', id: 'payment-provider-stripe' },
+    { providesFor: 'payment-checkout', id: 'payment-provider-invoice' },
   ],
-  getCapabilityId: (item) => item.capability,
-  getProviderId: (item) => item.providerId,
+  getCapabilityId: (item) => item.providesFor,
+  getProviderId: (item) => item.id,
   configuredProviders: {
-    auth: 'keycloak',
-  },
-  fallbackProviders: {
-    mailer: 'mailer-postmark',
+    'payment-checkout': 'payment-provider-stripe',
   },
 });
 
@@ -74,52 +73,37 @@ resolver directly:
 import { resolveProviderSelection } from '@lorion-org/provider-selection';
 
 const result = resolveProviderSelection({
-  providersByCapability: new Map([['auth', ['auth-local-jwt', 'keycloak']]]),
+  providersByCapability: new Map([
+    ['payment-checkout', ['payment-provider-invoice', 'payment-provider-stripe']],
+  ]),
   configuredProviders: {
-    auth: 'missing-provider',
+    'payment-checkout': 'missing-provider',
   },
 });
 
 result.selections;
 result.mismatches;
-// => [{ capabilityId: 'auth', configuredProviderId: 'missing-provider' }]
+// => [{ capabilityId: 'payment-checkout', configuredProviderId: 'missing-provider' }]
 ```
 
-## Example: command handlers
+If provider preferences are stored on descriptors, collect them before resolving:
 
 ```ts
-import { resolveItemProviderSelection } from '@lorion-org/provider-selection';
+import {
+  collectProviderPreferences,
+  resolveItemProviderSelection,
+} from '@lorion-org/provider-selection';
 
-const result = resolveItemProviderSelection({
-  items: [
-    { commandId: 'open', handlerId: 'open-native' },
-    { commandId: 'open', handlerId: 'open-web' },
-    { commandId: 'share', handlerId: 'share-link' },
-  ],
-  getCapabilityId: (item) => item.commandId,
-  getProviderId: (item) => item.handlerId,
-  configuredProviders: {
-    open: 'open-web',
-  },
+const configuredProviders = collectProviderPreferences({
+  items: descriptors,
+  getProviderPreferences: (descriptor) => descriptor.providerPreferences,
 });
-```
-
-## Example: storage drivers
-
-```ts
-import { resolveItemProviderSelection } from '@lorion-org/provider-selection';
 
 const result = resolveItemProviderSelection({
-  items: [
-    { storageKind: 'blob', driverId: 's3' },
-    { storageKind: 'blob', driverId: 'filesystem' },
-    { storageKind: 'queue', driverId: 'redis-streams' },
-  ],
-  getCapabilityId: (item) => item.storageKind,
-  getProviderId: (item) => item.driverId,
-  fallbackProviders: {
-    blob: 'filesystem',
-  },
+  items: descriptors,
+  getCapabilityId: (descriptor) => descriptor.providesFor,
+  getProviderId: (descriptor) => descriptor.id,
+  configuredProviders,
 });
 ```
 
@@ -157,6 +141,7 @@ type ItemProviderSelectionResolution = ProviderSelectionResolution & {
 
 The package exposes:
 
+- `collectProviderPreferences()`
 - `collectProvidersByCapability()`
 - `resolveItemProviderSelection()`
 - `resolveProviderSelection()`

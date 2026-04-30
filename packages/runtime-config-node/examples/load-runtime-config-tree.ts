@@ -1,9 +1,9 @@
 import { projectSectionedRuntimeConfig } from '@lorion-org/runtime-config';
 import { loadRuntimeConfigTree, writeRuntimeConfigFragment } from '@lorion-org/runtime-config-node';
 
-writeRuntimeConfigFragment('./var', 'billing', {
+writeRuntimeConfigFragment('./var', 'checkout', {
   public: {
-    apiBase: '/api/billing',
+    successPath: '/orders/confirmed',
   },
 });
 
@@ -11,7 +11,7 @@ const fragments = loadRuntimeConfigTree('./var');
 const runtimeConfig = projectSectionedRuntimeConfig(fragments);
 
 console.log(runtimeConfig.public);
-// { billingApiBase: '/api/billing' }
+// { checkoutSuccessPath: '/orders/confirmed' }
 
 console.log(runtimeConfig.private);
 // {}

@@ -1,3 +1,3 @@
 export default defineEventHandler(() => {
-  return usePublicRuntimeConfigScope('billing');
+  return usePublicRuntimeConfigScope('checkout');
 });

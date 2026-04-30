@@ -1,20 +1,24 @@
 import { createRegistryHub, type RegistryItem } from '@lorion-org/registry-hub';
 
-type Command = RegistryItem & {
-  command: string;
+type PaymentProvider = RegistryItem & {
+  createCheckoutPath: (input: { shopId: string }) => string;
 };
 
-type Tool = RegistryItem & {
-  title: string;
+type Shop = RegistryItem & {
+  path: string;
 };
 
 const hub = createRegistryHub();
 
-hub.register<Command>('commands', { id: 'build', command: 'pnpm build' });
-hub.register<Tool>('tools', { id: 'lint', title: 'Lint workspace' });
+hub.register<PaymentProvider>('payment-checkout-providers', {
+  id: 'payment-provider-stripe',
+  createCheckoutPath: (input) =>
+    `/providers/payment-provider-stripe/checkout?shop=${encodeURIComponent(input.shopId)}`,
+});
+hub.register<Shop>('shops', { id: 'shop-coffee', path: '/shops/coffee' });
 
-console.log(hub.list<Command>('commands'));
-// [{ id: 'build', command: 'pnpm build' }]
+console.log(hub.list<PaymentProvider>('payment-checkout-providers'));
+// [{ id: 'payment-provider-stripe', createCheckoutPath: [Function] }]
 
-console.log(hub.get<Tool>('tools', 'lint'));
-// { id: 'lint', title: 'Lint workspace' }
+console.log(hub.get<Shop>('shops', 'shop-coffee'));
+// { id: 'shop-coffee', path: '/shops/coffee' }

@@ -1,52 +1,59 @@
 import { createDescriptorCatalog } from '@lorion-org/composition-graph';
 
 const catalog = createDescriptorCatalog({
-  relationDescriptors: [
-    {
-      id: 'integrations',
-      field: 'integrations',
-    },
-  ],
   descriptors: [
     {
-      id: 'billing',
+      id: 'web',
       version: '1.0.0',
-      dependencies: { storage: '*' },
-      integrations: { analytics: '*' },
+      dependencies: {
+        checkout: '^1.0.0',
+        payments: '^1.0.0',
+        'payment-provider-invoice': '^1.0.0',
+        'payment-provider-stripe': '^1.0.0',
+        shops: '^1.0.0',
+      },
     },
     {
-      id: 'storage',
+      id: 'checkout',
+      version: '1.0.0',
+      dependencies: { payments: '^1.0.0' },
+    },
+    {
+      id: 'payments',
       version: '1.0.0',
     },
     {
-      id: 'analytics',
+      id: 'shops',
       version: '1.0.0',
     },
     {
-      id: 'ui-shell',
+      id: 'payment-provider-invoice',
       version: '1.0.0',
-      dependencies: { router: '*' },
+      providesFor: 'payment-checkout',
+      dependencies: { payments: '^1.0.0' },
     },
     {
-      id: 'router',
+      id: 'payment-provider-stripe',
       version: '1.0.0',
+      providesFor: 'payment-checkout',
+      dependencies: { payments: '^1.0.0' },
     },
   ],
 });
 
 const selection = catalog.resolveSelection({
-  selected: ['billing'],
-  baseDescriptors: ['ui-shell'],
+  selected: ['web'],
 });
 
 console.log(selection.getResolved());
-// ['analytics', 'billing', 'router', 'storage', 'ui-shell']
+// ['checkout', 'payment-provider-invoice', 'payment-provider-stripe', 'payments', 'shops', 'web']
 
 console.log(selection.getProvenance());
 // [
-//   { descriptorId: 'analytics', origins: ['resolved'] },
-//   { descriptorId: 'billing', origins: ['selected'] },
-//   { descriptorId: 'router', origins: ['resolved'] },
-//   { descriptorId: 'storage', origins: ['resolved'] },
-//   { descriptorId: 'ui-shell', origins: ['base'] }
+//   { descriptorId: 'checkout', origins: ['resolved'] },
+//   { descriptorId: 'payment-provider-invoice', origins: ['resolved'] },
+//   { descriptorId: 'payment-provider-stripe', origins: ['resolved'] },
+//   { descriptorId: 'payments', origins: ['resolved'] },
+//   { descriptorId: 'shops', origins: ['resolved'] },
+//   { descriptorId: 'web', origins: ['selected'] }
 // ]

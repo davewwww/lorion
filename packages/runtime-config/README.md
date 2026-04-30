@@ -45,7 +45,7 @@ The intended adapter shape is:
 - application-specific names, file names, and defaults stay in the consuming adapter
 
 Adapters may accept existing fragment field names and map them to generic
-contexts with `contextInputKey`. For example, a project can read `tenants`
+contexts with `contextInputKey`. For example, a project can read `stores`
 from its files while this package still works with the generic `contexts`
 model internally.
 
@@ -59,13 +59,13 @@ Fragments are written in local scope vocabulary. The scope id is not repeated in
 the keys.
 
 ```ts
-const authFragment = {
+const checkoutFragment = {
   public: {
-    url: 'https://auth.example.test',
-    realm: 'main',
+    currency: 'EUR',
+    successPath: '/orders/confirmed',
   },
   private: {
-    clientSecret: 'secret',
+    signingSecret: 'checkout_signing_secret_demo',
   },
 };
 ```
@@ -78,15 +78,15 @@ Some runtimes need one shared `public` and `private` object. The scope id become
 a transport prefix so many fragments can coexist without key collisions.
 
 ```ts
-const runtimeConfig = projectSectionedRuntimeConfig(new Map([['auth', authFragment]]));
+const runtimeConfig = projectSectionedRuntimeConfig(new Map([['checkout', checkoutFragment]]));
 
 // For a single fragment, use:
-projectRuntimeConfigFragment('auth', authFragment);
+projectRuntimeConfigFragment('checkout', checkoutFragment);
 
-runtimeConfig.public.authUrl;
-// => 'https://auth.example.test'
-runtimeConfig.private.authClientSecret;
-// => 'secret'
+runtimeConfig.public.checkoutCurrency;
+// => 'EUR'
+runtimeConfig.private.checkoutSigningSecret;
+// => 'checkout_signing_secret_demo'
 ```
 
 ### 3. Environment variable shape
@@ -96,19 +96,19 @@ Environment variables keep the same transport prefix and add visibility.
 ```ts
 toRuntimeEnvVars(runtimeConfig, 'APP');
 // => {
-//   APP_PUBLIC_AUTH_URL: 'https://auth.example.test',
-//   APP_PUBLIC_AUTH_REALM: 'main',
-//   APP_PRIVATE_AUTH_CLIENT_SECRET: 'secret'
+//   APP_PUBLIC_CHECKOUT_CURRENCY: 'EUR',
+//   APP_PUBLIC_CHECKOUT_SUCCESS_PATH: '/orders/confirmed',
+//   APP_PRIVATE_CHECKOUT_SIGNING_SECRET: 'checkout_signing_secret_demo'
 // }
 ```
 
 Usage code can read the flat runtime shape back through local keys:
 
 ```ts
-const auth = getPublicRuntimeConfigScope(runtimeConfig, 'auth');
+const checkout = getPublicRuntimeConfigScope(runtimeConfig, 'checkout');
 
-auth.url;
-// => 'https://auth.example.test'
+checkout.successPath;
+// => '/orders/confirmed'
 ```
 
 ## Basic example
@@ -122,18 +122,18 @@ import {
 
 const fragments = new Map([
   [
-    'billing',
+    'checkout',
     {
       public: {
-        apiBase: '/api/billing',
+        successPath: '/orders/confirmed',
       },
       private: {
-        apiSecret: 'secret',
+        signingSecret: 'checkout_signing_secret_demo',
       },
       contexts: {
-        tenantA: {
+        'eu-store': {
           public: {
-            apiBase: '/tenant-a/billing',
+            successPath: '/eu-store/orders/confirmed',
           },
         },
       },
@@ -143,16 +143,16 @@ const fragments = new Map([
 
 const runtimeConfig = projectSectionedRuntimeConfig(fragments);
 
-runtimeConfig.public.billingApiBase;
-// => '/api/billing'
+runtimeConfig.public.checkoutSuccessPath;
+// => '/orders/confirmed'
 
-resolveRuntimeConfigValue(runtimeConfig.public, 'billing', 'apiBase', {
-  contextId: 'tenantA',
+resolveRuntimeConfigValue(runtimeConfig.public, 'checkout', 'successPath', {
+  contextId: 'eu-store',
 });
-// => '/tenant-a/billing'
+// => '/eu-store/orders/confirmed'
 
-getPublicRuntimeConfigScope(runtimeConfig, 'billing');
-// => { apiBase: '/api/billing' }
+getPublicRuntimeConfigScope(runtimeConfig, 'checkout');
+// => { successPath: '/orders/confirmed' }
 ```
 
 ## Example: custom context input key
@@ -163,15 +163,15 @@ import { projectSectionedRuntimeConfig } from '@lorion-org/runtime-config';
 projectSectionedRuntimeConfig(
   [
     {
-      scopeId: 'billing',
+      scopeId: 'checkout',
       config: {
         public: {
-          apiBase: '/api/billing',
+          successPath: '/orders/confirmed',
         },
-        tenants: {
-          tenantA: {
+        stores: {
+          'eu-store': {
             public: {
-              apiBase: '/tenant-a/billing',
+              successPath: '/eu-store/orders/confirmed',
             },
           },
         },
@@ -179,16 +179,16 @@ projectSectionedRuntimeConfig(
     },
   ],
   {
-    contextInputKey: 'tenants',
-    contextOutputKey: '__tenants',
+    contextInputKey: 'stores',
+    contextOutputKey: '__stores',
   },
 );
 // => {
 //   public: {
-//     billingApiBase: '/api/billing',
-//     __tenants: {
-//       tenantA: {
-//         billingApiBase: '/tenant-a/billing'
+//     checkoutSuccessPath: '/orders/confirmed',
+//     __stores: {
+//       'eu-store': {
+//         checkoutSuccessPath: '/eu-store/orders/confirmed'
 //       }
 //     }
 //   },
@@ -209,38 +209,33 @@ import {
   projectRuntimeConfigNamespaces,
 } from '@lorion-org/runtime-config';
 
-const runtimeConfig = projectRuntimeConfigNamespace('mail', {
+const runtimeConfig = projectRuntimeConfigNamespace('checkout', {
   public: {
-    apiBase: '/api/mail',
+    successPath: '/orders/confirmed',
   },
   private: {
-    token: 'mail-token',
+    signingSecret: 'checkout_signing_secret_demo',
   },
 });
 
-runtimeConfig.public.mail;
-// => { apiBase: '/api/mail' }
-runtimeConfig.mail;
-// => { token: 'mail-token' }
+runtimeConfig.public.checkout;
+// => { successPath: '/orders/confirmed' }
+runtimeConfig.checkout;
+// => { signingSecret: 'checkout_signing_secret_demo' }
 
 const combinedRuntimeConfig = projectRuntimeConfigNamespaces([
   {
-    scopeId: 'mail',
+    scopeId: 'payments',
     config: {
       public: {
-        apiBase: '/api/mail',
-      },
-      private: {
-        token: 'mail-token',
+        configuredProvider: 'payment-provider-stripe',
       },
     },
   },
 ]);
 
-combinedRuntimeConfig.public.mail;
-// => { apiBase: '/api/mail' }
-combinedRuntimeConfig.mail;
-// => { token: 'mail-token' }
+combinedRuntimeConfig.public.payments;
+// => { configuredProvider: 'payment-provider-stripe' }
 ```
 
 ## Example: environment variables
@@ -258,30 +253,30 @@ import {
 const envVars = toRuntimeEnvVars(
   {
     public: {
-      billingApiBase: '/api/billing',
+      checkoutSuccessPath: '/orders/confirmed',
     },
     private: {
-      billingApiSecret: 'secret',
+      checkoutSigningSecret: 'checkout_signing_secret_demo',
     },
   },
   'APP',
 );
 
 runtimeEnvVarsToString(envVars);
-// => APP_PUBLIC_BILLING_API_BASE=/api/billing
-// => APP_PRIVATE_BILLING_API_SECRET=secret
+// => APP_PUBLIC_CHECKOUT_SUCCESS_PATH=/orders/confirmed
+// => APP_PRIVATE_CHECKOUT_SIGNING_SECRET=checkout_signing_secret_demo
 
 runtimeEnvVarsToShellAssignments(envVars);
-// => APP_PUBLIC_BILLING_API_BASE='"/api/billing"'
-// => APP_PRIVATE_BILLING_API_SECRET='"secret"'
+// => APP_PUBLIC_CHECKOUT_SUCCESS_PATH='"/orders/confirmed"'
+// => APP_PRIVATE_CHECKOUT_SIGNING_SECRET='"checkout_signing_secret_demo"'
 
 projectRuntimeConfigEnvVars(
   new Map([
     [
-      'billing',
+      'payments',
       {
         public: {
-          apiBase: '/api/billing',
+          configuredProvider: 'payment-provider-stripe',
         },
       },
     ],
@@ -291,7 +286,7 @@ projectRuntimeConfigEnvVars(
   },
 );
 // => {
-//   APP_PUBLIC_BILLING_API_BASE: '/api/billing'
+//   APP_PUBLIC_PAYMENTS_CONFIGURED_PROVIDER: 'payment-provider-stripe'
 // }
 ```
 

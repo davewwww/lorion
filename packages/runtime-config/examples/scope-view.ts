@@ -5,28 +5,28 @@ import {
   toRuntimeEnvVars,
 } from '@lorion-org/runtime-config';
 
-const runtimeConfig = projectRuntimeConfigFragment('auth', {
+const runtimeConfig = projectRuntimeConfigFragment('checkout', {
   public: {
-    url: 'https://auth.example.test',
-    realm: 'main',
+    currency: 'EUR',
+    successPath: '/orders/confirmed',
   },
   private: {
-    clientSecret: 'secret',
+    signingSecret: 'checkout_signing_secret_demo',
   },
 });
 
-console.log(runtimeConfig.public.authUrl);
-// 'https://auth.example.test'
+console.log(runtimeConfig.public.checkoutCurrency);
+// 'EUR'
 
 console.log(toRuntimeEnvVars(runtimeConfig, 'APP'));
 // {
-//   APP_PUBLIC_AUTH_URL: 'https://auth.example.test',
-//   APP_PUBLIC_AUTH_REALM: 'main',
-//   APP_PRIVATE_AUTH_CLIENT_SECRET: 'secret'
+//   APP_PUBLIC_CHECKOUT_CURRENCY: 'EUR',
+//   APP_PUBLIC_CHECKOUT_SUCCESS_PATH: '/orders/confirmed',
+//   APP_PRIVATE_CHECKOUT_SIGNING_SECRET: 'checkout_signing_secret_demo'
 // }
 
-console.log(getPublicRuntimeConfigScope(runtimeConfig, 'auth'));
-// { url: 'https://auth.example.test', realm: 'main' }
+console.log(getPublicRuntimeConfigScope(runtimeConfig, 'checkout'));
+// { currency: 'EUR', successPath: '/orders/confirmed' }
 
-console.log(getPrivateRuntimeConfigScope(runtimeConfig, 'auth'));
-// { clientSecret: 'secret' }
+console.log(getPrivateRuntimeConfigScope(runtimeConfig, 'checkout'));
+// { signingSecret: 'checkout_signing_secret_demo' }

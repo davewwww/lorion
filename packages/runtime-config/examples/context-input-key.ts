@@ -6,15 +6,15 @@ import {
 const runtimeConfig = projectSectionedRuntimeConfig(
   [
     {
-      scopeId: 'billing',
+      scopeId: 'checkout',
       config: {
         public: {
-          apiBase: '/api/billing',
+          successPath: '/orders/confirmed',
         },
-        tenants: {
-          tenantA: {
+        stores: {
+          'eu-store': {
             public: {
-              apiBase: '/tenant-a/billing',
+              successPath: '/eu-store/orders/confirmed',
             },
           },
         },
@@ -22,25 +22,25 @@ const runtimeConfig = projectSectionedRuntimeConfig(
     },
   ],
   {
-    contextInputKey: 'tenants',
-    contextOutputKey: '__tenants',
+    contextInputKey: 'stores',
+    contextOutputKey: '__stores',
   },
 );
 
 console.log(runtimeConfig.public);
 // {
-//   billingApiBase: '/api/billing',
-//   __tenants: {
-//     tenantA: {
-//       billingApiBase: '/tenant-a/billing'
+//   checkoutSuccessPath: '/orders/confirmed',
+//   __stores: {
+//     'eu-store': {
+//       checkoutSuccessPath: '/eu-store/orders/confirmed'
 //     }
 //   }
 // }
 
 console.log(
-  resolveRuntimeConfigValue(runtimeConfig.public, 'billing', 'apiBase', {
-    contextId: 'tenantA',
-    contextOutputKey: '__tenants',
+  resolveRuntimeConfigValue(runtimeConfig.public, 'checkout', 'successPath', {
+    contextId: 'eu-store',
+    contextOutputKey: '__stores',
   }),
 );
-// '/tenant-a/billing'
+// '/eu-store/orders/confirmed'

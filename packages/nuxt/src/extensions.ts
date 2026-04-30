@@ -7,6 +7,7 @@ import {
 } from '@lorion-org/composition-graph';
 import { discoverDescriptors } from '@lorion-org/descriptor-discovery';
 import {
+  collectProviderPreferences,
   resolveItemProviderSelection,
   type ProviderPreferenceMap,
 } from '@lorion-org/provider-selection';
@@ -348,29 +349,15 @@ export function createNuxtExtensionLayerPaths(bootstrap: NuxtExtensionBootstrap)
     .map((extension) => extension.cwd);
 }
 
-function collectProviderPreferences(extensions: NuxtExtensionEntry[]): ProviderPreferenceMap {
-  return extensions.reduce<ProviderPreferenceMap>((preferences, extension) => {
-    const value = extension.descriptor.providerPreferences;
-
-    if (!isRecord(value)) return preferences;
-
-    return {
-      ...preferences,
-      ...Object.fromEntries(
-        Object.entries(value).filter(
-          (entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].length > 0,
-        ),
-      ),
-    };
-  }, {});
-}
-
 export function createNuxtProviderSelectionRuntimeConfig(
   extensions: NuxtExtensionEntry[],
   options: NuxtProviderSelectionOptions = {},
 ): NuxtRuntimeConfig {
   const publicRuntimeConfigKey = 'providerSelection';
-  const descriptorPreferences = collectProviderPreferences(extensions);
+  const descriptorPreferences = collectProviderPreferences({
+    items: extensions,
+    getProviderPreferences: (extension) => extension.descriptor.providerPreferences,
+  });
   const configuredProviders = {
     ...descriptorPreferences,
     ...(options.configuredProviders ?? {}),

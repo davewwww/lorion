@@ -30,42 +30,65 @@ pnpm add @lorion-org/composition-graph
 import { createDescriptorCatalog } from '@lorion-org/composition-graph';
 
 const catalog = createDescriptorCatalog({
-  relationDescriptors: [
-    {
-      id: 'integrations',
-      field: 'integrations',
-    },
-  ],
   descriptors: [
     {
-      id: 'billing',
+      id: 'default',
       version: '1.0.0',
-      dependencies: { storage: '*' },
-      integrations: { analytics: '*' },
+      dependencies: { web: '^1.0.0' },
     },
     {
-      id: 'storage',
+      id: 'web',
+      version: '1.0.0',
+      dependencies: {
+        checkout: '^1.0.0',
+        payments: '^1.0.0',
+        'payment-provider-invoice': '^1.0.0',
+        'payment-provider-stripe': '^1.0.0',
+        shops: '^1.0.0',
+        'shop-coffee': '^1.0.0',
+        'shop-stationery': '^1.0.0',
+      },
+    },
+    {
+      id: 'checkout',
+      version: '1.0.0',
+      dependencies: { payments: '^1.0.0' },
+    },
+    {
+      id: 'payments',
       version: '1.0.0',
     },
     {
-      id: 'analytics',
+      id: 'shops',
       version: '1.0.0',
     },
     {
-      id: 'web-shell',
+      id: 'payment-provider-invoice',
       version: '1.0.0',
-      dependencies: { router: '*' },
+      providesFor: 'payment-checkout',
+      dependencies: { payments: '^1.0.0' },
     },
     {
-      id: 'router',
+      id: 'payment-provider-stripe',
       version: '1.0.0',
+      providesFor: 'payment-checkout',
+      dependencies: { payments: '^1.0.0' },
+    },
+    {
+      id: 'shop-coffee',
+      version: '1.0.0',
+      dependencies: { shops: '^1.0.0' },
+    },
+    {
+      id: 'shop-stationery',
+      version: '1.0.0',
+      dependencies: { shops: '^1.0.0' },
     },
   ],
 });
 
 const selection = catalog.resolveSelection({
-  selected: ['billing'],
-  baseDescriptors: ['web-shell'],
+  selected: ['default'],
 });
 
 console.log(selection.getResolved());
@@ -83,33 +106,32 @@ import { createDescriptorCatalog } from '@lorion-org/composition-graph';
 const catalog = createDescriptorCatalog({
   descriptors: [
     {
-      id: 'billing',
+      id: 'web',
       version: '1.0.0',
-      dependencies: { storage: '*' },
+      dependencies: { checkout: '^1.0.0', shops: '^1.0.0' },
     },
     {
-      id: 'storage',
+      id: 'checkout',
+      version: '1.0.0',
+      dependencies: { payments: '^1.0.0' },
+    },
+    {
+      id: 'payments',
       version: '1.0.0',
     },
     {
-      id: 'web-shell',
-      version: '1.0.0',
-      dependencies: { router: '*' },
-    },
-    {
-      id: 'router',
+      id: 'shops',
       version: '1.0.0',
     },
   ],
 });
 
 const selection = catalog.resolveSelection({
-  selected: ['billing'],
-  baseDescriptors: ['web-shell'],
+  baseDescriptors: ['web'],
 });
 
 selection.getResolved();
-// => ['billing', 'router', 'storage', 'web-shell']
+// => ['checkout', 'payments', 'shops', 'web']
 ```
 
 ## Example: explain why something is present
@@ -123,30 +145,30 @@ import { createDescriptorCatalog } from '@lorion-org/composition-graph';
 const catalog = createDescriptorCatalog({
   descriptors: [
     {
-      id: 'billing',
+      id: 'web',
       version: '1.0.0',
-      dependencies: { storage: '*' },
+      dependencies: { checkout: '^1.0.0' },
     },
     {
-      id: 'storage',
+      id: 'checkout',
       version: '1.0.0',
-      dependencies: { queue: '*' },
+      dependencies: { payments: '^1.0.0' },
     },
     {
-      id: 'queue',
+      id: 'payments',
       version: '1.0.0',
     },
   ],
 });
 
 catalog.explain({
-  from: 'billing',
-  to: 'queue',
+  from: 'web',
+  to: 'payments',
   relationIds: ['dependencies'],
 });
 // => [
-//   { from: 'billing', to: 'storage', relation: 'dependencies' },
-//   { from: 'storage', to: 'queue', relation: 'dependencies' },
+//   { from: 'web', to: 'checkout', relation: 'dependencies' },
+//   { from: 'checkout', to: 'payments', relation: 'dependencies' },
 // ]
 ```
 
@@ -160,9 +182,8 @@ import { createDescriptorCatalog } from '@lorion-org/composition-graph';
 import { discoverDescriptors } from '@lorion-org/descriptor-discovery';
 
 const discovered = discoverDescriptors({
-  roots: ['./descriptors'],
-  descriptorFileName: 'descriptor.json',
-  idField: 'name',
+  cwd: './playground',
+  descriptorPaths: ['layer-extensions/*/extension.json'],
   nestedField: 'bundles',
 });
 
