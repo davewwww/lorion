@@ -32,12 +32,11 @@ Documentation-only and tooling-only changes usually do not need a Changeset.
    changelogs, and removed Changeset files.
 5. Merge the version PR.
 6. The next Release workflow run publishes the changed public packages to npm
-   with provenance and the `beta` npm dist-tag.
+   with provenance.
 
-The workflow currently uses `pnpm release:beta`, so published packages are not
-promoted to npm's default `latest` dist-tag yet. When LORION is ready for stable
-releases, switch the workflow publish command to `pnpm release` and review the
-pending version PR before merging it.
+The workflow currently runs in Changesets pre mode, so `pnpm release` publishes
+the prerelease package versions using the `beta` tag from `.changeset/pre.json`.
+Published packages are not promoted to npm's default `latest` dist-tag yet.
 
 Changesets pre mode is active for the `beta` tag in `.changeset/pre.json`.
 While it is active, `pnpm version-packages` creates prerelease package versions
@@ -49,7 +48,7 @@ To prepare the stable release path later:
 pnpm changeset pre exit
 ```
 
-Then update the Release workflow from `pnpm release:beta` to `pnpm release`.
+Then review the pending version PR before merging it.
 
 ## Required GitHub/Npm Setup
 
