@@ -35,6 +35,7 @@ const catalog = createDescriptorCatalog({
     {
       id: 'payment-provider-stripe',
       version: '1.0.0',
+      defaultFor: 'payment-checkout',
       providesFor: 'payment-checkout',
       dependencies: { payments: '^1.0.0' },
     },

@@ -10,6 +10,9 @@ Use this package when a React application is assembled from local capability pac
 pnpm add @lorion-org/react react
 ```
 
+Host configs that import selection helpers from `@lorion-org/composition-graph`
+should declare that package directly too.
+
 Add Vite, TanStack Router, or another router in the host application as needed.
 The runtime helpers do not own routing; the Vite entry point only prepares
 capability discovery and TanStack-compatible virtual route config.
@@ -117,13 +120,10 @@ import { lorionReact } from '@lorion-org/react/vite';
 The Vite helper discovers `capabilities/*/capability.json`, validates the descriptor shape with LORION, resolves selected descriptors through the LORION composition graph, resolves each package `./capability` export, and exposes `virtual:capabilities`.
 
 ```ts
-const capabilityComposition = {
-  selected: ['default'],
-};
 const lorion = lorionReact({
   workspaceRoot,
   routesDirectory,
-  ...capabilityComposition,
+  defaultSelection: ['default'],
 });
 
 export default defineConfig({
@@ -138,31 +138,58 @@ export default defineConfig({
 });
 ```
 
-Route config generation stays TanStack-focused and only includes enabled, selected capability route directories. If no `selected` or `baseDescriptors` are provided, every enabled local capability remains active. Use `indexRouteFile: false` when `/` is owned by a capability route.
+By default the Vite helper reads the shared capability seed from
+`--capabilities`, `npm_config_capabilities`, and `LORION_CAPABILITIES` before it
+falls back to `defaultSelection`. No `selectionSeed.key` option is required for
+that default. Pass `selectionSeed` only to override the seed names, inject custom
+`argv`/`env` for tests, or set `selectionSeed: false` to disable CLI/env lookup.
+
+Route config generation stays TanStack-focused and only includes enabled,
+selected capability route directories. If no `selected`, seed value,
+`defaultSelection`, or `baseDescriptors` are provided, every enabled local
+capability remains active.
+Use `indexRouteFile: false` when `/` is owned by a capability route.
+
+The virtual module exports `capabilityModules`, `selectedCapabilityIds`, and
+`resolvedCapabilityIds` so host code can distinguish the seed from the final
+graph resolution.
 
 ## Provider Selection
 
-Capabilities that implement another capability can declare `providesFor`:
+Capabilities that implement another capability can declare `providesFor`.
+Provider-owned defaults use `defaultFor` on the provider descriptor:
 
 ```json
 {
   "id": "payment-provider-stripe",
   "version": "1.0.0",
-  "providesFor": "payment-checkout"
+  "providesFor": "checkout",
+  "defaultFor": "checkout"
 }
 ```
 
-Any active descriptor can declare preferences with `providerPreferences`:
+`providesFor` and `defaultFor` both accept a string or string array. If a
+capability descriptor exists, `defaultFor` also creates the composition relation
+from that capability to the default provider.
+
+Profiles can still declare descriptor preferences with `providerPreferences`.
+Use this when the profile, not the provider package, owns the default choice:
 
 ```json
 {
   "id": "web",
   "version": "1.0.0",
   "providerPreferences": {
-    "payment-checkout": "payment-provider-stripe"
+    "checkout": "payment-provider-stripe"
   }
 }
 ```
+
+When a provider capability is explicitly selected through the normal selection
+seed, the Vite helper removes lower-priority `defaultFor` and
+`providerPreferences` relations for that capability before graph resolution.
+That selected provider wins over descriptor defaults and preferences. A losing
+provider is only present if another hard dependency still requires it.
 
 Read the resolved provider selection from the runtime:
 
@@ -172,7 +199,16 @@ import { getCapabilityProviderSelection } from '@lorion-org/react';
 const selection = getCapabilityProviderSelection(capabilityRuntime);
 ```
 
-Explicit `configuredProviders` passed to `getCapabilityProviderSelection()` override descriptor preferences. `fallbackProviders` are only used when no configured provider exists.
+Explicit `configuredProviders` passed to `getCapabilityProviderSelection()`
+override selected providers, provider-owned defaults, and descriptor
+preferences. `selectedProviders` can mirror the descriptor seed at runtime, and
+`fallbackProviders` are merged with descriptor defaults and only used when no
+configured or selected provider exists.
+
+The React playground uses the first variant by default: Stripe declares
+`defaultFor: "checkout"` and is selected as the fallback provider. Selecting
+`web payment-provider-invoice` through the seed switches checkout to Invoice and
+leaves Stripe out of the resolved capabilities.
 
 ## API
 
@@ -189,7 +225,12 @@ The package includes a React playground that mirrors the Nuxt package playground
 pnpm --filter @lorion-org/react dev:playground
 ```
 
+The playground scripts run with Lorion's `lorion-source` export condition so
+local workspace package imports resolve to `src` instead of stale `dist` output.
+
 The playground runs on `http://localhost:3200` and uses local demo capabilities under `playground/capabilities`.
+Select a different profile or provider with `--capabilities=admin`,
+`--capabilities=web,payment-provider-invoice`, or `LORION_CAPABILITIES="web payment-provider-invoice"`.
 
 ## Local Commands
 

@@ -20,8 +20,19 @@
         },
         "version": { "$ref": "#/$defs/semver" },
         "providesFor": {
-          "type": "string",
-          "minLength": 1
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          ]
         },
         "capabilities": {
           "type": "array",
@@ -33,6 +44,21 @@
         "dependencies": { "$ref": "#/$defs/dependencyMap" },
         "disabled": { "type": "boolean" },
         "location": { "type": "string" },
+        "defaultFor": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          ]
+        },
         "providerPreferences": {
           "type": "object",
           "additionalProperties": {
@@ -43,6 +69,16 @@
         "publicRuntimeConfig": {
           "type": "object",
           "additionalProperties": true
+        },
+        "runtimeConfig": {
+          "type": "object",
+          "properties": {
+            "validation": {
+              "type": "string",
+              "enum": ["none", "optional", "startup", "onUse"]
+            }
+          },
+          "additionalProperties": false
         },
         "bundles": {
           "type": "array",

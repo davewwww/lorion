@@ -11,6 +11,8 @@
     "build": "turbo run build",
     "clean": "turbo run clean --force",
     "dev": "turbo run dev --parallel",
+    "playground:nuxt": "pnpm --filter @lorion-org/nuxt dev:playground",
+    "playground:react": "pnpm --filter @lorion-org/react dev:playground",
     "eslint": "pnpm run lint",
     "eslint:fix": "pnpm run lint:fix",
     "format": "prettier --write .",

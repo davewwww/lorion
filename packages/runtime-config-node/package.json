@@ -22,6 +22,10 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "lorion-source": {
+        "types": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
       "import": {
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
@@ -35,7 +39,9 @@
   "files": [
     "dist",
     "examples",
-    "LICENSE"
+    "LICENSE",
+    "src/**/*.ts",
+    "!src/**/*.spec.ts"
   ],
   "keywords": [
     "runtime-config",

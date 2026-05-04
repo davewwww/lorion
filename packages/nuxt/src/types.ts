@@ -1,4 +1,3 @@
-import type { JsonSchemaObject } from '@lorion-org/descriptor-discovery';
 import type {
   NamedRuntimeConfigFragment,
   ProjectSectionedRuntimeConfigOptions,
@@ -8,11 +7,16 @@ import type {
   SectionedRuntimeConfig,
 } from '@lorion-org/runtime-config';
 import type { ProviderPreferenceMap, ProviderSelection } from '@lorion-org/provider-selection';
-import type { Descriptor, RelationDescriptor } from '@lorion-org/composition-graph';
+import type {
+  Descriptor,
+  DescriptorSelectionSeedInput,
+  RelationDescriptor,
+} from '@lorion-org/composition-graph';
 import type {
   RuntimeConfigPathPatternSource,
   ValidateRuntimeConfigPatternSourceScopesOptions,
 } from '@lorion-org/runtime-config-node';
+import type { JsonSchemaObject } from './descriptor-schema';
 import type { NuxtExtensionBootstrap } from './extensions';
 
 export type RuntimeConfigNuxtFragmentInput = RuntimeConfigFragment & Record<string, unknown>;
@@ -65,11 +69,14 @@ export type NuxtRuntimeConfigValidationOptions = Pick<
 export type NuxtProviderSelectionModuleOptions = {
   configuredProviders?: ProviderPreferenceMap;
   enabled?: boolean;
+  fallbackProviders?: ProviderPreferenceMap;
+  selectedProviders?: ProviderPreferenceMap;
 };
 
 export type NuxtProviderSelectionRuntimeConfig = {
   configuredProviders: ProviderPreferenceMap;
   excludedProviderIds: string[];
+  fallbackProviders: ProviderPreferenceMap;
   mismatches: Array<{
     capabilityId: string;
     configuredProviderId: string;
@@ -104,6 +111,8 @@ export type NuxtBaseExtensionSelection =
   | string[]
   | ((input: NuxtBaseExtensionSelectionInput) => string[]);
 
+export type NuxtExtensionSelectionSeedOptions = Omit<DescriptorSelectionSeedInput, 'defaultValue'>;
+
 export type NuxtExtensionModuleOptions = {
   baseExtensions?: NuxtBaseExtensionSelection;
   defaultSelection?: string | string[];
@@ -112,6 +121,7 @@ export type NuxtExtensionModuleOptions = {
   enabled?: boolean;
   relationDescriptors?: RelationDescriptor[];
   selected?: string | string[];
+  selectionSeed?: false | NuxtExtensionSelectionSeedOptions;
 };
 
 export type LorionNuxtModuleOptions = {

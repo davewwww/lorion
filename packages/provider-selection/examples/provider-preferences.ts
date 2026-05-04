@@ -1,42 +1,61 @@
 import {
+  collectProviderDefaults,
   collectProviderPreferences,
+  collectSelectedProviderPreferences,
   resolveItemProviderSelection,
 } from '@lorion-org/provider-selection';
 
 type PlaygroundDescriptor = {
+  defaultFor?: string | string[];
   id: string;
   providerPreferences?: Record<string, string>;
-  providesFor?: string;
+  providesFor?: string | string[];
 };
 
 const descriptors: PlaygroundDescriptor[] = [
   {
     id: 'web',
     providerPreferences: {
-      'payment-checkout': 'payment-provider-stripe',
+      checkout: 'payment-provider-stripe',
     },
   },
   {
     id: 'payment-provider-stripe',
-    providesFor: 'payment-checkout',
+    defaultFor: 'checkout',
+    providesFor: 'checkout',
   },
   {
     id: 'payment-provider-invoice',
-    providesFor: 'payment-checkout',
+    providesFor: 'checkout',
   },
 ];
 
-const configuredProviders = collectProviderPreferences({
+const providerDefaults = collectProviderDefaults({
+  items: descriptors,
+  getDefaultFor: (descriptor) => descriptor.defaultFor,
+  getProviderId: (descriptor) => descriptor.id,
+});
+const descriptorPreferences = collectProviderPreferences({
   items: descriptors,
   getProviderPreferences: (descriptor) => descriptor.providerPreferences,
+});
+const selectedProviders = collectSelectedProviderPreferences({
+  items: descriptors,
+  getCapabilityId: (descriptor) => descriptor.providesFor,
+  getProviderId: (descriptor) => descriptor.id,
+  selectedProviderIds: ['payment-provider-invoice'],
 });
 
 const result = resolveItemProviderSelection({
   items: descriptors,
   getCapabilityId: (descriptor) => descriptor.providesFor,
   getProviderId: (descriptor) => descriptor.id,
-  configuredProviders,
+  fallbackProviders: {
+    ...providerDefaults,
+    ...descriptorPreferences,
+  },
+  selectedProviders,
 });
 
 console.log(Object.fromEntries(result.selections));
-// { 'payment-checkout': { selectedProviderId: 'payment-provider-stripe', mode: 'configured', ... } }
+// { checkout: { selectedProviderId: 'payment-provider-invoice', mode: 'selected', ... } }

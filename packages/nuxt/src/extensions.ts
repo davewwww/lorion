@@ -1,31 +1,47 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import process from 'node:process';
 import {
   createDescriptorCatalog,
+  parseDescriptorIds,
+  resolveDescriptorSelectionSeed,
   type DescriptorCatalog,
   type Descriptor,
+  type RelationDescriptor,
 } from '@lorion-org/composition-graph';
 import { discoverDescriptors } from '@lorion-org/descriptor-discovery';
 import {
+  collectProviderDefaults,
   collectProviderPreferences,
+  collectSelectedProviderPreferences,
   resolveItemProviderSelection,
+  resolveSelectedProviderRelationPreferences,
   type ProviderPreferenceMap,
 } from '@lorion-org/provider-selection';
+import type { RuntimeConfigValidationPolicy } from '@lorion-org/runtime-config';
 import type {
   NuxtBaseExtensionSelectionInput,
   NuxtExtensionSelectionRuntimeConfig,
   NuxtExtensionModuleOptions,
+  NuxtExtensionSelectionSeedOptions,
   NuxtProviderSelectionModuleOptions,
   NuxtProviderSelectionRuntimeConfig,
   NuxtRuntimeConfig,
 } from './types';
 import { nuxtExtensionDescriptorSchema } from './descriptor-schema';
 
-export type { NuxtExtensionModuleOptions } from './types';
+export type {
+  LorionNuxtModuleOptions,
+  NuxtExtensionModuleOptions,
+  NuxtExtensionSelectionSeedOptions,
+  RuntimeConfigNuxtModuleOptions,
+} from './types';
 
 export type NuxtExtensionDescriptor = Descriptor & {
+  defaultFor?: string | string[];
   providerPreferences?: ProviderPreferenceMap;
   publicRuntimeConfig?: NuxtRuntimeConfig['public'];
+  runtimeConfig?: RuntimeConfigValidationPolicy;
 };
 
 export type NuxtExtensionEntry = {
@@ -62,29 +78,44 @@ const defaultExtensionOptions = {
   publicRuntimeConfigKey: 'extensionSelection',
   descriptorPaths: ['extensions/*/extension.json'],
 } as const;
+const defaultExtensionSelectionSeedKey = 'capability';
+const defaultExtensionResolutionRelations = [
+  'dependencies',
+  'defaultProviders',
+  'providerPreferences',
+];
+const defaultNuxtRelationDescriptors: RelationDescriptor[] = [
+  {
+    direction: 'incoming',
+    field: 'defaultFor',
+    id: 'defaultProviders',
+  },
+  {
+    id: 'providerPreferences',
+    field: 'providerPreferences',
+    targetMode: 'values',
+  },
+];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function asArray<T>(value: T | T[] | undefined): T[] {
-  if (value === undefined) return [];
-
-  return Array.isArray(value) ? value : [value];
-}
-
-function splitSelectionValue(value: string): string[] {
-  return value
-    .split(/[,\s]+/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
-
 function normalizeSelection(value: string | string[] | undefined): string[] {
-  return asArray(value).flatMap((entry) => {
-    if (typeof entry !== 'string') return [];
+  return parseDescriptorIds(value);
+}
 
-    return splitSelectionValue(entry);
+function resolveNuxtExtensionSelectionSeed(
+  seedOptions: false | NuxtExtensionSelectionSeedOptions | undefined,
+): string[] {
+  if (seedOptions === false) return [];
+
+  return resolveDescriptorSelectionSeed({
+    argv: seedOptions?.argv ?? process.argv,
+    env: seedOptions?.env ?? process.env,
+    key: seedOptions?.key ?? defaultExtensionSelectionSeedKey,
+    ...(seedOptions?.cliKeys ? { cliKeys: seedOptions.cliKeys } : {}),
+    ...(seedOptions?.envKeys ? { envKeys: seedOptions.envKeys } : {}),
   });
 }
 
@@ -141,6 +172,10 @@ function createExtensionEntry(input: {
   cwd: string;
   descriptor: NuxtExtensionDescriptor;
 }): NuxtExtensionEntry {
+  const descriptor: NuxtExtensionDescriptor = {
+    ...input.descriptor,
+    location: input.descriptor.location ?? input.cwd,
+  };
   const appDir = optionalDir(join(input.cwd, 'app'));
   const modulesDir = optionalDir(join(input.cwd, 'modules'));
   const publicDir = optionalDir(join(input.cwd, 'public'));
@@ -149,7 +184,7 @@ function createExtensionEntry(input: {
   const configFile = findNuxtConfigFile(input.cwd);
   const entry: NuxtExtensionEntry = {
     cwd: input.cwd,
-    descriptor: input.descriptor,
+    descriptor,
   };
 
   if (appDir) entry.appDir = appDir;
@@ -177,7 +212,7 @@ function canExtendExtensionLayer(entry: NuxtExtensionEntry): boolean {
   return Boolean(entry.configFile);
 }
 
-function discoverExtensionEntries(input: {
+export function discoverNuxtExtensionEntries(input: {
   projectRootDir: string;
   options: NuxtExtensionModuleOptions;
 }): NuxtExtensionEntry[] {
@@ -202,6 +237,22 @@ function discoverExtensionEntries(input: {
   );
 }
 
+export function createNuxtExtensionCatalog(input: {
+  entries: NuxtExtensionEntry[];
+  relationDescriptors?: RelationDescriptor[];
+}): DescriptorCatalog {
+  return createDescriptorCatalog({
+    descriptors: input.entries.map((entry) => entry.descriptor),
+    relationDescriptors: [...defaultNuxtRelationDescriptors, ...(input.relationDescriptors ?? [])],
+  });
+}
+
+export function createNuxtExtensionEntryMap(
+  entries: NuxtExtensionEntry[],
+): Map<string, NuxtExtensionEntry> {
+  return new Map(entries.map((entry) => [entry.descriptor.id, entry]));
+}
+
 function pickEntriesById(
   ids: string[],
   entryById: Map<string, NuxtExtensionEntry>,
@@ -209,6 +260,46 @@ function pickEntriesById(
   return ids
     .map((id) => entryById.get(id))
     .filter((entry): entry is NuxtExtensionEntry => Boolean(entry));
+}
+
+export function createNuxtSelectedProviderPreferences(input: {
+  entries: NuxtExtensionEntry[];
+  selectedExtensions: string[];
+}): ProviderPreferenceMap {
+  return collectSelectedProviderPreferences({
+    items: input.entries,
+    getCapabilityId: (entry) => entry.descriptor.providesFor,
+    getProviderId: (entry) => entry.descriptor.id,
+    selectedProviderIds: input.selectedExtensions,
+  });
+}
+
+function createProviderSelectionAwareEntries(
+  entries: NuxtExtensionEntry[],
+  selectedProviders: ProviderPreferenceMap,
+): NuxtExtensionEntry[] {
+  if (!Object.keys(selectedProviders).length) return entries;
+
+  return entries.map((entry) => {
+    const descriptor = { ...entry.descriptor };
+    const preferences = resolveSelectedProviderRelationPreferences({
+      providerId: entry.descriptor.id,
+      defaultFor: entry.descriptor.defaultFor,
+      providerPreferences: entry.descriptor.providerPreferences,
+      selectedProviders,
+    });
+
+    delete descriptor.defaultFor;
+    delete descriptor.providerPreferences;
+
+    return {
+      ...entry,
+      descriptor: {
+        ...descriptor,
+        ...preferences,
+      },
+    };
+  });
 }
 
 function mergeRuntimeConfigSection(
@@ -270,11 +361,11 @@ export function createNuxtExtensionBootstrap(input: {
   const options = input.options ?? {};
   const selectedExtensions = resolveExtensionSelection({
     ...(options.defaultSelection ? { defaultSelection: options.defaultSelection } : {}),
-    ...(options.selected ? { selected: options.selected } : {}),
+    selected: options.selected ?? resolveNuxtExtensionSelectionSeed(options.selectionSeed),
   });
   const createCatalog = (entries: NuxtExtensionEntry[]): DescriptorCatalog =>
-    createDescriptorCatalog({
-      descriptors: entries.map((entry) => entry.descriptor),
+    createNuxtExtensionCatalog({
+      entries,
       ...(options.relationDescriptors ? { relationDescriptors: options.relationDescriptors } : {}),
     });
 
@@ -291,7 +382,7 @@ export function createNuxtExtensionBootstrap(input: {
     };
   }
 
-  const entries = discoverExtensionEntries({
+  const entries = discoverNuxtExtensionEntries({
     projectRootDir: input.rootDir,
     options,
   });
@@ -300,7 +391,6 @@ export function createNuxtExtensionBootstrap(input: {
     options,
     selectedExtensions,
   });
-  const entryById = new Map(entries.map((entry) => [entry.descriptor.id, entry]));
 
   if (!entries.length) {
     return {
@@ -315,13 +405,26 @@ export function createNuxtExtensionBootstrap(input: {
     };
   }
 
-  const catalog = createCatalog(entries);
+  const selectedProviders = createNuxtSelectedProviderPreferences({
+    entries,
+    selectedExtensions,
+  });
+  const resolutionEntries = createProviderSelectionAwareEntries(entries, selectedProviders);
+  const catalog = createCatalog(resolutionEntries);
   const selection = catalog.resolveSelection({
     baseDescriptors: baseExtensionIds,
+    policy: {
+      inspectionRelationIds: defaultExtensionResolutionRelations,
+      provenanceRelationIds: defaultExtensionResolutionRelations,
+      resolutionRelationIds: defaultExtensionResolutionRelations,
+    },
     selected: selectedExtensions,
   });
   const resolvedExtensionIds = selection.getResolved();
-  const resolvedExtensions = pickEntriesById(resolvedExtensionIds, entryById);
+  const resolvedExtensions = pickEntriesById(
+    resolvedExtensionIds,
+    createNuxtExtensionEntryMap(resolutionEntries),
+  );
   const activeExtensions = resolvedExtensions.filter(canRegisterExtensionLayer);
 
   return {
@@ -358,15 +461,25 @@ export function createNuxtProviderSelectionRuntimeConfig(
     items: extensions,
     getProviderPreferences: (extension) => extension.descriptor.providerPreferences,
   });
-  const configuredProviders = {
+  const providerDefaults = collectProviderDefaults({
+    items: extensions,
+    getDefaultFor: (extension) => extension.descriptor.defaultFor,
+    getProviderId: (extension) => extension.descriptor.id,
+  });
+  const configuredProviders = options.configuredProviders ?? {};
+  const selectedProviders = options.selectedProviders ?? {};
+  const fallbackProviders = {
+    ...providerDefaults,
     ...descriptorPreferences,
-    ...(options.configuredProviders ?? {}),
+    ...(options.fallbackProviders ?? {}),
   };
   const resolution = resolveItemProviderSelection({
     items: extensions,
     getCapabilityId: (extension) => extension.descriptor.providesFor,
     getProviderId: (extension) => extension.descriptor.id,
     configuredProviders,
+    fallbackProviders,
+    selectedProviders,
   });
 
   return {
@@ -374,6 +487,7 @@ export function createNuxtProviderSelectionRuntimeConfig(
       [publicRuntimeConfigKey]: {
         configuredProviders,
         excludedProviderIds: resolution.excludedProviderIds,
+        fallbackProviders,
         mismatches: resolution.mismatches,
         selections: Object.fromEntries(resolution.selections),
       } satisfies NuxtProviderSelectionRuntimeConfig,

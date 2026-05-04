@@ -81,7 +81,9 @@ function buildDescriptorProfile(
     disabled: descriptor.disabled === true,
     capabilities: [...(descriptor.capabilities ?? [])].sort(),
     ...(descriptor.location ? { location: descriptor.location } : {}),
-    ...(typeof descriptor.providesFor === 'string' ? { providesFor: descriptor.providesFor } : {}),
+    ...(typeof descriptor.providesFor === 'string' || Array.isArray(descriptor.providesFor)
+      ? { providesFor: descriptor.providesFor }
+      : {}),
     outgoing,
     incoming,
   };

@@ -14,7 +14,6 @@ import { Route as IndexRouteImport } from './../capabilities/shops/src/routes/in
 import { Route as ShopsDotstationeryRouteImport } from './../capabilities/shop-stationery/src/routes/shops.stationery'
 import { Route as ShopsDotcoffeeRouteImport } from './../capabilities/shop-coffee/src/routes/shops.coffee'
 import { Route as ProvidersDotpaymentProviderStripeDotcheckoutRouteImport } from './../capabilities/payment-provider-stripe/src/routes/providers.payment-provider-stripe.checkout'
-import { Route as ProvidersDotpaymentProviderInvoiceDotcheckoutRouteImport } from './../capabilities/payment-provider-invoice/src/routes/providers.payment-provider-invoice.checkout'
 
 const TechRoute = TechRouteImport.update({
   id: '/tech',
@@ -42,19 +41,12 @@ const ProvidersDotpaymentProviderStripeDotcheckoutRoute =
     path: '/providers/payment-provider-stripe/checkout',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ProvidersDotpaymentProviderInvoiceDotcheckoutRoute =
-  ProvidersDotpaymentProviderInvoiceDotcheckoutRouteImport.update({
-    id: '/providers/payment-provider-invoice/checkout',
-    path: '/providers/payment-provider-invoice/checkout',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/tech': typeof TechRoute
   '/shops/coffee': typeof ShopsDotcoffeeRoute
   '/shops/stationery': typeof ShopsDotstationeryRoute
-  '/providers/payment-provider-invoice/checkout': typeof ProvidersDotpaymentProviderInvoiceDotcheckoutRoute
   '/providers/payment-provider-stripe/checkout': typeof ProvidersDotpaymentProviderStripeDotcheckoutRoute
 }
 export interface FileRoutesByTo {
@@ -62,7 +54,6 @@ export interface FileRoutesByTo {
   '/tech': typeof TechRoute
   '/shops/coffee': typeof ShopsDotcoffeeRoute
   '/shops/stationery': typeof ShopsDotstationeryRoute
-  '/providers/payment-provider-invoice/checkout': typeof ProvidersDotpaymentProviderInvoiceDotcheckoutRoute
   '/providers/payment-provider-stripe/checkout': typeof ProvidersDotpaymentProviderStripeDotcheckoutRoute
 }
 export interface FileRoutesById {
@@ -71,7 +62,6 @@ export interface FileRoutesById {
   '/tech': typeof TechRoute
   '/shops/coffee': typeof ShopsDotcoffeeRoute
   '/shops/stationery': typeof ShopsDotstationeryRoute
-  '/providers/payment-provider-invoice/checkout': typeof ProvidersDotpaymentProviderInvoiceDotcheckoutRoute
   '/providers/payment-provider-stripe/checkout': typeof ProvidersDotpaymentProviderStripeDotcheckoutRoute
 }
 export interface FileRouteTypes {
@@ -81,7 +71,6 @@ export interface FileRouteTypes {
     | '/tech'
     | '/shops/coffee'
     | '/shops/stationery'
-    | '/providers/payment-provider-invoice/checkout'
     | '/providers/payment-provider-stripe/checkout'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -89,7 +78,6 @@ export interface FileRouteTypes {
     | '/tech'
     | '/shops/coffee'
     | '/shops/stationery'
-    | '/providers/payment-provider-invoice/checkout'
     | '/providers/payment-provider-stripe/checkout'
   id:
     | '__root__'
@@ -97,7 +85,6 @@ export interface FileRouteTypes {
     | '/tech'
     | '/shops/coffee'
     | '/shops/stationery'
-    | '/providers/payment-provider-invoice/checkout'
     | '/providers/payment-provider-stripe/checkout'
   fileRoutesById: FileRoutesById
 }
@@ -106,7 +93,6 @@ export interface RootRouteChildren {
   TechRoute: typeof TechRoute
   ShopsDotcoffeeRoute: typeof ShopsDotcoffeeRoute
   ShopsDotstationeryRoute: typeof ShopsDotstationeryRoute
-  ProvidersDotpaymentProviderInvoiceDotcheckoutRoute: typeof ProvidersDotpaymentProviderInvoiceDotcheckoutRoute
   ProvidersDotpaymentProviderStripeDotcheckoutRoute: typeof ProvidersDotpaymentProviderStripeDotcheckoutRoute
 }
 
@@ -147,13 +133,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProvidersDotpaymentProviderStripeDotcheckoutRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/providers/payment-provider-invoice/checkout': {
-      id: '/providers/payment-provider-invoice/checkout'
-      path: '/providers/payment-provider-invoice/checkout'
-      fullPath: '/providers/payment-provider-invoice/checkout'
-      preLoaderRoute: typeof ProvidersDotpaymentProviderInvoiceDotcheckoutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -162,8 +141,6 @@ const rootRouteChildren: RootRouteChildren = {
   TechRoute: TechRoute,
   ShopsDotcoffeeRoute: ShopsDotcoffeeRoute,
   ShopsDotstationeryRoute: ShopsDotstationeryRoute,
-  ProvidersDotpaymentProviderInvoiceDotcheckoutRoute:
-    ProvidersDotpaymentProviderInvoiceDotcheckoutRoute,
   ProvidersDotpaymentProviderStripeDotcheckoutRoute:
     ProvidersDotpaymentProviderStripeDotcheckoutRoute,
 }

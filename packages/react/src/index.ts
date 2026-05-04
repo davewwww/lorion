@@ -6,13 +6,22 @@ import {
   type DescriptorCatalog,
 } from '@lorion-org/composition-graph';
 import {
+  collectProviderDefaults,
   collectProviderPreferences,
   resolveItemProviderSelection,
   type ProviderPreferenceMap,
   type ProviderSelectionResolution,
 } from '@lorion-org/provider-selection';
+import { defaultCapabilityRelationDescriptors } from './relations';
+
+export {
+  createCapabilityCompositionPolicy,
+  defaultCapabilityRelationDescriptors,
+  defaultCapabilityResolutionRelations,
+} from './relations';
 
 export type CapabilityManifest = Descriptor & {
+  defaultFor?: string | string[];
   description?: string;
   providerPreferences?: ProviderPreferenceMap;
 };
@@ -71,6 +80,7 @@ export function createContributionContract<T>(id: string): ContributionContract<
 export type CapabilityProviderSelectionOptions = {
   configuredProviders?: ProviderPreferenceMap;
   fallbackProviders?: ProviderPreferenceMap;
+  selectedProviders?: ProviderPreferenceMap;
 };
 
 export function getCapabilityProviderSelection(
@@ -82,16 +92,25 @@ export function getCapabilityProviderSelection(
     items: descriptors,
     getProviderPreferences: (descriptor) => descriptor.providerPreferences,
   });
-  const configuredProviders = {
+  const providerDefaults = collectProviderDefaults({
+    items: descriptors,
+    getDefaultFor: (descriptor) => descriptor.defaultFor,
+    getProviderId: (descriptor) => descriptor.id,
+  });
+  const configuredProviders = options.configuredProviders ?? {};
+  const selectedProviders = options.selectedProviders ?? {};
+  const fallbackProviders = {
+    ...providerDefaults,
     ...descriptorPreferences,
-    ...(options.configuredProviders ?? {}),
+    ...(options.fallbackProviders ?? {}),
   };
   const resolution = resolveItemProviderSelection({
     items: descriptors,
     getCapabilityId: (descriptor) => descriptor.providesFor,
     getProviderId: (descriptor) => descriptor.id,
     configuredProviders,
-    ...(options.fallbackProviders ? { fallbackProviders: options.fallbackProviders } : {}),
+    fallbackProviders,
+    selectedProviders,
   });
 
   return {
@@ -198,5 +217,6 @@ function collectContributions(capabilities: readonly RuntimeCapability[]): Map<s
 function createCapabilityCatalog(capabilities: readonly RuntimeCapability[]): DescriptorCatalog {
   return createDescriptorCatalog({
     descriptors: capabilities.map((capability) => capability.manifest),
+    relationDescriptors: defaultCapabilityRelationDescriptors,
   });
 }

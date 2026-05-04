@@ -39,7 +39,7 @@ export const defaultRelationDescriptors: RelationDescriptor[] = [
   },
 ];
 
-function isVersionConstraintMap(value: unknown): value is Record<string, string> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
@@ -50,9 +50,19 @@ function getRelationTargets(
   const field = relationDescriptor.field ?? relationDescriptor.id;
   const relationValue = descriptor[field];
 
-  if (!isVersionConstraintMap(relationValue)) return [];
+  const targets = Array.isArray(relationValue)
+    ? relationValue
+    : typeof relationValue === 'string'
+      ? [relationValue]
+      : isRecord(relationValue)
+        ? relationDescriptor.targetMode === 'values'
+          ? Object.values(relationValue)
+          : Object.keys(relationValue)
+        : [];
 
-  return Object.keys(relationValue).sort();
+  return targets
+    .filter((target): target is string => typeof target === 'string' && target.length > 0)
+    .sort();
 }
 
 function createOriginType(path: ResolutionStep[]): CompositionOriginType {
@@ -90,16 +100,17 @@ export function buildDescriptorGraph(input: {
       for (const target of getRelationTargets(descriptor, relationDescriptor)) {
         if (!input.descriptorMap.has(target)) continue;
 
+        const isIncoming = relationDescriptor.direction === 'incoming';
         const edge: DescriptorEdge = {
-          from: descriptor.id,
-          to: target,
+          from: isIncoming ? target : descriptor.id,
+          to: isIncoming ? descriptor.id : target,
           relation: relationDescriptor.id,
           source: 'descriptor',
         };
 
         edges.push(edge);
-        outgoing.get(descriptor.id)?.push(edge);
-        incoming.get(target)?.push(edge);
+        outgoing.get(edge.from)?.push(edge);
+        incoming.get(edge.to)?.push(edge);
       }
     }
   }

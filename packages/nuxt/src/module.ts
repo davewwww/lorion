@@ -5,6 +5,7 @@ import {
   addServerImports,
   addServerTemplate,
   addTemplate,
+  addTypeTemplate,
   createResolver,
   defineNuxtModule,
   useLogger,
@@ -13,6 +14,7 @@ import type { Nuxt, NuxtConfigLayer, NuxtModule, NuxtOptions } from '@nuxt/schem
 import {
   createNuxtExtensionBootstrap,
   createNuxtProviderSelectionRuntimeConfig,
+  createNuxtSelectedProviderPreferences,
   type NuxtExtensionBootstrap,
   type NuxtExtensionEntry,
 } from './extensions';
@@ -35,7 +37,19 @@ import type {
   NuxtRuntimeConfig,
   RuntimeConfigNuxtModuleOptions,
 } from './types';
-import type { RuntimeConfigSchemaTargetInput } from '@lorion-org/runtime-config-node';
+import {
+  resolveRuntimeConfigValidationMode,
+  shouldRequireRuntimeConfigAtStartup,
+  type RuntimeConfigValidationMode,
+  type RuntimeConfigValidationPolicyInput,
+  type RuntimeConfigValidationSchemaRegistry,
+} from '@lorion-org/runtime-config';
+import {
+  assertRequiredRuntimeConfigValidationTargets,
+  readRuntimeConfigSchemaRegistry,
+  type RuntimeConfigSchemaTargetInput,
+  type RuntimeConfigValidateResult,
+} from '@lorion-org/runtime-config-node';
 
 type RuntimeConfigComposableDefaults = {
   contextOutputKey?: string;
@@ -67,13 +81,18 @@ type RuntimeConfigPublicAssetsHook = (
 
 const runtimeConfigImportNames = [
   'useRuntimeConfigFragment',
+  'useValidatedRuntimeConfigFragment',
   'useRuntimeConfigScope',
+  'useValidatedRuntimeConfigScope',
   'usePublicRuntimeConfigScope',
+  'usePublicValidatedRuntimeConfigScope',
   'usePrivateRuntimeConfigScope',
+  'usePrivateValidatedRuntimeConfigScope',
   'useRuntimeConfigValue',
 ] as const;
 
-const runtimeConfigComposablesTemplate = 'lorion/runtime-config-composables.ts';
+const runtimeConfigComposablesTemplate = 'lorion/runtime-config-composables.mjs';
+const runtimeConfigComposablesImport = '#build/lorion/runtime-config-composables';
 const serverRuntimeConfigComposablesTemplate = '#internal/lorion-runtime-config-composables.mjs';
 
 const defaultRuntimeConfigSource = {
@@ -125,10 +144,12 @@ function normalizeImportPath(path: string): string {
 }
 
 function createRuntimeConfigComposablesSource(input: {
+  validationSchemas: RuntimeConfigValidationSchemaRegistry;
   runtimeConfigFrom: string;
   typed: boolean;
   useRuntimeConfigFrom: string;
 }): string {
+  const validationSchemasSource = JSON.stringify(input.validationSchemas);
   const typeImports = input.typed
     ? `
 import type {
@@ -190,6 +211,7 @@ export type UseRuntimeConfigFragmentOptions =
       };
 
   return `import { useRuntimeConfig } from '${input.useRuntimeConfigFrom}'
+import { createRuntimeConfigValidatorRegistry } from '@lorion-org/runtime-config'
 import {
   getNuxtRuntimeConfigFragment,
   getNuxtRuntimeConfigScope,
@@ -199,6 +221,12 @@ import {
 } from '${input.runtimeConfigFrom}'
 ${typeImports}
 const runtimeConfigDefaultsKey = '__lorionNuxt'
+const runtimeConfigValidationSchemas = ${validationSchemasSource}
+const runtimeConfigValidatorRegistry = createRuntimeConfigValidatorRegistry(runtimeConfigValidationSchemas)
+
+function assertValidatedRuntimeConfigFragment(scopeId, fragment) {
+  runtimeConfigValidatorRegistry.assert(scopeId, fragment)
+}
 
 function getComposableDefaults(runtimeConfig${typeAnnotations.runtimeConfig})${typeAnnotations.defaults} {
   const container = runtimeConfig.public?.[runtimeConfigDefaultsKey]
@@ -227,8 +255,28 @@ export function useRuntimeConfigFragment(scopeId, options${typeAnnotations.fragm
   return getNuxtRuntimeConfigFragment(runtimeConfig, scopeId, withComposableDefaults(runtimeConfig, options))
 }
 
+export function useValidatedRuntimeConfigFragment(scopeId, options${typeAnnotations.fragmentOptions} = {})${typeAnnotations.fragmentReturn} {
+  const runtimeConfig = useRuntimeConfig()
+  const fragment = getNuxtRuntimeConfigFragment(runtimeConfig, scopeId, withComposableDefaults(runtimeConfig, options))
+
+  assertValidatedRuntimeConfigFragment(scopeId, fragment)
+
+  return fragment
+}
+
 export function useRuntimeConfigScope${typeAnnotations.scopeReturn}(scopeId, options${typeAnnotations.scopeOptions} = {}) {
   const runtimeConfig = useRuntimeConfig()
+
+  return getNuxtRuntimeConfigScope(runtimeConfig, scopeId, withComposableDefaults(runtimeConfig, options))
+}
+
+export function useValidatedRuntimeConfigScope${typeAnnotations.scopeReturn}(scopeId, options${typeAnnotations.scopeOptions} = {}) {
+  const runtimeConfig = useRuntimeConfig()
+
+  assertValidatedRuntimeConfigFragment(
+    scopeId,
+    getNuxtRuntimeConfigFragment(runtimeConfig, scopeId, withComposableDefaults(runtimeConfig, options)),
+  )
 
   return getNuxtRuntimeConfigScope(runtimeConfig, scopeId, withComposableDefaults(runtimeConfig, options))
 }
@@ -239,8 +287,30 @@ export function usePublicRuntimeConfigScope${typeAnnotations.scopeReturn}(scopeI
   return getPublicNuxtRuntimeConfigScope(runtimeConfig, scopeId, withComposableDefaults(runtimeConfig, options))
 }
 
+export function usePublicValidatedRuntimeConfigScope${typeAnnotations.scopeReturn}(scopeId, options${typeAnnotations.publicOptions} = {}) {
+  const runtimeConfig = useRuntimeConfig()
+
+  assertValidatedRuntimeConfigFragment(
+    scopeId,
+    getNuxtRuntimeConfigFragment(runtimeConfig, scopeId, withComposableDefaults(runtimeConfig, options)),
+  )
+
+  return getPublicNuxtRuntimeConfigScope(runtimeConfig, scopeId, withComposableDefaults(runtimeConfig, options))
+}
+
 export function usePrivateRuntimeConfigScope${typeAnnotations.scopeReturn}(scopeId, options${typeAnnotations.privateOptions} = {}) {
   const runtimeConfig = useRuntimeConfig()
+
+  return getPrivateNuxtRuntimeConfigScope(runtimeConfig, scopeId, withComposableDefaults(runtimeConfig, options))
+}
+
+export function usePrivateValidatedRuntimeConfigScope${typeAnnotations.scopeReturn}(scopeId, options${typeAnnotations.privateOptions} = {}) {
+  const runtimeConfig = useRuntimeConfig()
+
+  assertValidatedRuntimeConfigFragment(
+    scopeId,
+    getNuxtRuntimeConfigFragment(runtimeConfig, scopeId, withComposableDefaults(runtimeConfig, options)),
+  )
 
   return getPrivateNuxtRuntimeConfigScope(runtimeConfig, scopeId, withComposableDefaults(runtimeConfig, options))
 }
@@ -249,6 +319,73 @@ export function useRuntimeConfigValue${typeAnnotations.valueOptions}(scopeId, ke
   const runtimeConfig = useRuntimeConfig()
 
   return resolveNuxtRuntimeConfigValue(runtimeConfig, scopeId, key, withComposableDefaults(runtimeConfig, options))
+}
+`;
+}
+
+function createRuntimeConfigComposablesTypesSource(): string {
+  return `declare module '${runtimeConfigComposablesImport}' {
+  import type {
+    GetRuntimeConfigFragmentOptions,
+    GetRuntimeConfigScopeOptions,
+    ResolveRuntimeConfigValueFromRuntimeConfigOptions,
+    RuntimeConfigContext,
+    RuntimeConfigSection,
+  } from '@lorion-org/runtime-config'
+
+  type NuxtPrivateRuntimeConfigMode = 'root' | 'section'
+  type ReadNuxtRuntimeConfigOptions = {
+    privateInput?: NuxtPrivateRuntimeConfigMode
+  }
+
+  export function useRuntimeConfigFragment(
+    scopeId: string,
+    options?: GetRuntimeConfigFragmentOptions & ReadNuxtRuntimeConfigOptions,
+  ): RuntimeConfigContext
+  export function useValidatedRuntimeConfigFragment(
+    scopeId: string,
+    options?: GetRuntimeConfigFragmentOptions & ReadNuxtRuntimeConfigOptions,
+  ): RuntimeConfigContext
+  export function useRuntimeConfigScope<T extends RuntimeConfigSection = RuntimeConfigSection>(
+    scopeId: string,
+    options?: GetRuntimeConfigScopeOptions & ReadNuxtRuntimeConfigOptions,
+  ): T
+  export function useValidatedRuntimeConfigScope<
+    T extends RuntimeConfigSection = RuntimeConfigSection,
+  >(scopeId: string, options?: GetRuntimeConfigScopeOptions & ReadNuxtRuntimeConfigOptions): T
+  export function usePublicRuntimeConfigScope<
+    T extends RuntimeConfigSection = RuntimeConfigSection,
+  >(
+    scopeId: string,
+    options?: Omit<GetRuntimeConfigScopeOptions, 'visibility'> & ReadNuxtRuntimeConfigOptions,
+  ): T
+  export function usePublicValidatedRuntimeConfigScope<
+    T extends RuntimeConfigSection = RuntimeConfigSection,
+  >(
+    scopeId: string,
+    options?: Omit<GetRuntimeConfigScopeOptions, 'visibility'> & ReadNuxtRuntimeConfigOptions,
+  ): T
+  export function usePrivateRuntimeConfigScope<
+    T extends RuntimeConfigSection = RuntimeConfigSection,
+  >(
+    scopeId: string,
+    options?: Omit<GetRuntimeConfigScopeOptions, 'visibility'> & ReadNuxtRuntimeConfigOptions,
+  ): T
+  export function usePrivateValidatedRuntimeConfigScope<
+    T extends RuntimeConfigSection = RuntimeConfigSection,
+  >(
+    scopeId: string,
+    options?: Omit<GetRuntimeConfigScopeOptions, 'visibility'> & ReadNuxtRuntimeConfigOptions,
+  ): T
+  export function useRuntimeConfigValue<T = unknown>(
+    scopeId: string,
+    key: string,
+    options?: ResolveRuntimeConfigValueFromRuntimeConfigOptions<T> & ReadNuxtRuntimeConfigOptions,
+  ): T | undefined
+}
+
+declare module '${serverRuntimeConfigComposablesTemplate}' {
+  export * from '${runtimeConfigComposablesImport}'
 }
 `;
 }
@@ -302,11 +439,105 @@ function resolveRuntimeConfigValidationTargets(
   bootstrap?: NuxtExtensionBootstrap,
 ): RuntimeConfigSchemaTargetInput[] {
   return (
-    bootstrap?.resolvedExtensions.map((extension) => ({
-      scopeId: extension.descriptor.id,
-      cwd: extension.cwd,
-    })) ?? []
+    bootstrap?.resolvedExtensions
+      .filter((extension) => extension.descriptor.runtimeConfig !== undefined)
+      .map((extension) => ({
+        scopeId: extension.descriptor.id,
+        cwd: extension.cwd,
+        policy: extension.descriptor.runtimeConfig,
+      })) ?? []
   );
+}
+
+function createRuntimeConfigValidationSchemas(
+  options: RuntimeConfigNuxtModuleOptions,
+  bootstrap?: NuxtExtensionBootstrap,
+): RuntimeConfigValidationSchemaRegistry {
+  if (options.validation === false || !options.validation) return {};
+
+  return readRuntimeConfigSchemaRegistry(resolveRuntimeConfigValidationTargets(bootstrap), {
+    ...(options.validation.schemaFileName
+      ? { schemaFileName: options.validation.schemaFileName }
+      : {}),
+  });
+}
+
+function createRuntimeConfigValidationPolicyByScope(
+  targets: RuntimeConfigSchemaTargetInput[],
+): Map<string, RuntimeConfigValidationPolicyInput> {
+  return new Map(targets.map((target) => [target.scopeId, target.policy]));
+}
+
+function formatRuntimeConfigValidationMode(
+  policy: RuntimeConfigValidationPolicyInput,
+): RuntimeConfigValidationMode {
+  return resolveRuntimeConfigValidationMode(policy);
+}
+
+function isRuntimeConfigValidationFatal(
+  scopeId: string,
+  policyByScope: Map<string, RuntimeConfigValidationPolicyInput>,
+): boolean {
+  return shouldRequireRuntimeConfigAtStartup(policyByScope.get(scopeId));
+}
+
+function formatRuntimeConfigSkippedValidationDetails(
+  skipped: RuntimeConfigValidateResult['skipped'][number],
+  mode: RuntimeConfigValidationMode,
+): string {
+  if (skipped.reason === 'missing-schema') {
+    return [
+      `RuntimeConfig schema file missing for "${skipped.scopeId}" (${mode}).`,
+      ...(skipped.schemaPath ? [`missing schema file: ${skipped.schemaPath}`] : []),
+      ...(skipped.configPath ? [`runtime config file: ${skipped.configPath}`] : []),
+    ].join(' ');
+  }
+
+  if (skipped.reason === 'missing-config') {
+    return [
+      `RuntimeConfig file missing for "${skipped.scopeId}" (${mode}).`,
+      ...(skipped.configPath ? [`expected runtime config file: ${skipped.configPath}`] : []),
+      ...(skipped.schemaPath ? [`schema file: ${skipped.schemaPath}`] : []),
+    ].join(' ');
+  }
+
+  return [
+    `RuntimeConfig validation target has no schema directory for "${skipped.scopeId}" (${mode}).`,
+    ...(skipped.configPath ? [`runtime config file: ${skipped.configPath}`] : []),
+    ...(skipped.schemaPath ? [`schema file: ${skipped.schemaPath}`] : []),
+  ].join(' ');
+}
+
+function reportRuntimeConfigValidationResult(
+  result: RuntimeConfigValidateResult,
+  targets: RuntimeConfigSchemaTargetInput[],
+): void {
+  if (!result.skipped.length && !result.invalid.length) return;
+
+  const logger = useLogger('lorion');
+  const policyByScope = createRuntimeConfigValidationPolicyByScope(targets);
+
+  for (const skipped of result.skipped) {
+    const fatal = isRuntimeConfigValidationFatal(skipped.scopeId, policyByScope);
+    const mode = formatRuntimeConfigValidationMode(policyByScope.get(skipped.scopeId));
+    const details = formatRuntimeConfigSkippedValidationDetails(skipped, mode);
+
+    logger[fatal ? 'error' : 'warn'](details);
+  }
+
+  for (const invalid of result.invalid) {
+    const fatal = isRuntimeConfigValidationFatal(invalid.scopeId, policyByScope);
+    const mode = formatRuntimeConfigValidationMode(policyByScope.get(invalid.scopeId));
+
+    logger[fatal ? 'error' : 'warn'](
+      [
+        `RuntimeConfig validation failed for "${invalid.scopeId}" (${mode}).`,
+        `runtime config file: ${invalid.configPath}`,
+        `schema file: ${invalid.schemaPath}`,
+        invalid.error.message,
+      ].join(' '),
+    );
+  }
 }
 
 function validateRuntimeConfigSource(
@@ -318,28 +549,44 @@ function validateRuntimeConfigSource(
 
   if (!targets.length) return;
 
-  validateNuxtRuntimeConfigSourceScopes(options.source, targets, {
+  const result = validateNuxtRuntimeConfigSourceScopes(options.source, targets, {
     ...(options.validation.formatError ? { formatError: options.validation.formatError } : {}),
     ...(options.validation.schemaFileName
       ? { schemaFileName: options.validation.schemaFileName }
       : {}),
   });
+
+  reportRuntimeConfigValidationResult(result, targets);
+  assertRequiredRuntimeConfigValidationTargets(result, targets);
 }
 
-function addRuntimeConfigImports(options: RuntimeConfigNuxtModuleOptions): void {
-  if (options.imports === false) return;
-
+function addRuntimeConfigComposables(
+  options: RuntimeConfigNuxtModuleOptions,
+  bootstrap?: NuxtExtensionBootstrap,
+  hostImports?: { scan?: unknown },
+  registerImports = true,
+): void {
   const resolver = createResolver(import.meta.url);
   const runtimeConfigFrom = normalizeImportPath(resolver.resolve('./runtime-config'));
-  const template = addTemplate({
+  const validationSchemas = createRuntimeConfigValidationSchemas(options, bootstrap);
+  addTemplate({
     filename: runtimeConfigComposablesTemplate,
+    write: true,
     getContents: () =>
       createRuntimeConfigComposablesSource({
         runtimeConfigFrom,
-        typed: true,
+        typed: false,
         useRuntimeConfigFrom: 'nuxt/app',
+        validationSchemas,
       }),
   });
+  addTypeTemplate(
+    {
+      filename: 'types/lorion-runtime-config-composables.d.ts',
+      getContents: createRuntimeConfigComposablesTypesSource,
+    },
+    { nitro: true, nuxt: true },
+  );
 
   addServerTemplate({
     filename: serverRuntimeConfigComposablesTemplate,
@@ -348,12 +595,13 @@ function addRuntimeConfigImports(options: RuntimeConfigNuxtModuleOptions): void 
         runtimeConfigFrom,
         typed: false,
         useRuntimeConfigFrom: 'nitropack/runtime',
+        validationSchemas,
       }),
   });
 
   const imports = runtimeConfigImportNames.map((name) => ({
     as: name,
-    from: `#build/${template.filename}`,
+    from: runtimeConfigComposablesImport,
     name,
   }));
   const serverImports = runtimeConfigImportNames.map((name) => ({
@@ -362,8 +610,20 @@ function addRuntimeConfigImports(options: RuntimeConfigNuxtModuleOptions): void 
     name,
   }));
 
+  if (!registerImports) return;
+  if (!shouldRegisterRuntimeConfigImports(options, hostImports)) return;
+
   addImports(imports);
   addServerImports(serverImports);
+}
+
+export function shouldRegisterRuntimeConfigImports(
+  options: Pick<RuntimeConfigNuxtModuleOptions, 'imports'>,
+  hostImports?: { scan?: unknown },
+): boolean {
+  if (options.imports !== undefined) return options.imports;
+
+  return hostImports?.scan !== false;
 }
 
 function createRuntimeConfigDefaultsConfig(
@@ -414,9 +674,15 @@ function applyRuntimeConfigModule(input: {
     ? createConfiguredNuxtRuntimeConfig({ runtimeConfig: runtimeConfigOptions }, input.bootstrap)
     : undefined;
 
+  addRuntimeConfigComposables(
+    runtimeConfigOptions ?? {},
+    input.bootstrap,
+    input.nuxt.options.imports,
+    Boolean(runtimeConfigOptions),
+  );
+
   if (!runtimeConfigOptions) return input.currentRuntimeConfig;
 
-  addRuntimeConfigImports(runtimeConfigOptions);
   registerRuntimeConfigPublicAssets(runtimeConfigOptions, input.nuxt);
   validateRuntimeConfigSource(runtimeConfigOptions, input.bootstrap);
 
@@ -432,7 +698,16 @@ function createProviderSelectionRuntimeConfig(
 ): NuxtRuntimeConfig | undefined {
   if (options?.enabled === false) return undefined;
 
-  return createNuxtProviderSelectionRuntimeConfig(bootstrap.resolvedExtensions, options);
+  return createNuxtProviderSelectionRuntimeConfig(bootstrap.resolvedExtensions, {
+    ...options,
+    selectedProviders: {
+      ...createNuxtSelectedProviderPreferences({
+        entries: bootstrap.resolvedExtensions,
+        selectedExtensions: bootstrap.selectedExtensions,
+      }),
+      ...(options?.selectedProviders ?? {}),
+    },
+  });
 }
 
 export function createNuxtExtensionBootstrapLogEvent(input: {

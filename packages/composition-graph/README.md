@@ -71,6 +71,7 @@ const catalog = createDescriptorCatalog({
     {
       id: 'payment-provider-stripe',
       version: '1.0.0',
+      defaultFor: 'payment-checkout',
       providesFor: 'payment-checkout',
       dependencies: { payments: '^1.0.0' },
     },
@@ -132,6 +133,33 @@ const selection = catalog.resolveSelection({
 
 selection.getResolved();
 // => ['checkout', 'payments', 'shops', 'web']
+```
+
+## Example: normalize selection seeds
+
+Host adapters often accept descriptor selections from CLI flags, package-manager
+config variables, environment variables, or static defaults. Use
+`resolveDescriptorSelectionSeed()` at that boundary and pass the resulting ids to
+the catalog or framework adapter.
+
+The graph package does not prescribe a domain word for selection. Pass `key`
+when you want derived CLI and environment names, or pass explicit `cliKeys` and
+`envKeys`. Framework adapters such as `@lorion-org/nuxt` and
+`@lorion-org/react` provide their own `capability` default.
+
+```ts
+import { resolveDescriptorSelectionSeed } from '@lorion-org/composition-graph';
+
+const selected = resolveDescriptorSelectionSeed({
+  argv: process.argv,
+  defaultValue: ['default'],
+  env: process.env,
+  key: 'capability',
+});
+
+// --capabilities=admin,checkout
+// LORION_CAPABILITIES="admin checkout"
+// => ['admin', 'checkout']
 ```
 
 ## Example: explain why something is present
@@ -197,16 +225,29 @@ const catalog = createDescriptorCatalog({
 - `dependencies` is the only built-in relation
 - every additional relation must be registered via `relationDescriptors`
 - unconfigured descriptor fields are ignored by the graph
-- string parsing for user-facing selection input belongs in a higher adapter layer
+- selection seed parsing belongs at the host adapter boundary
 - nested descriptor authoring belongs in a discovery or normalization layer, not in this package
 
 `relationDescriptors` are intentionally small:
 
 - `id` identifies the relation in graph queries and policies
 - `field` optionally maps the relation to a descriptor field name
+- `targetMode: 'values'` reads object values instead of object keys
+- `direction: 'incoming'` builds inverse edges from a target field back to the descriptor
 
-The core graph does not prescribe directional interpretation, hinting, or
-weighting. Those concerns belong in higher layers.
+The core graph does not prescribe provider policy, hinting, or weighting. Those
+concerns belong in higher layers. A framework adapter can, for example, register
+an inverse `defaultProviders` relation for provider-owned defaults:
+
+```ts
+const catalog = createDescriptorCatalog({
+  descriptors,
+  relationDescriptors: [{ id: 'defaultProviders', field: 'defaultFor', direction: 'incoming' }],
+});
+```
+
+That turns `{ id: 'keycloak', defaultFor: 'auth' }` into a graph edge
+`auth -> keycloak`, as long as both descriptors exist.
 
 Dependency-specific projections are also intentionally outside the core. If a
 consumer needs a "what pulled this in?" view, derive that from

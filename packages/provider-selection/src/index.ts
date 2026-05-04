@@ -1,11 +1,30 @@
 export type CapabilityId = string;
 export type ProviderId = string;
 
-export type ProviderSelectionMode = 'configured' | 'fallback' | 'first';
+export type ProviderSelectionMode = 'configured' | 'selected' | 'fallback' | 'first';
 export type ProviderPreferenceMap = Partial<Record<CapabilityId, ProviderId>>;
 export type ProviderPreferenceCollectionInput<T> = {
   items: Iterable<T>;
   getProviderPreferences: (item: T) => unknown;
+};
+export type ProviderDefaultCollectionInput<T> = {
+  items: Iterable<T>;
+  getDefaultFor: (item: T) => unknown;
+  getProviderId: (item: T) => ProviderId;
+};
+export type SelectedProviderPreferenceCollectionInput<T> = ProviderCollectionInput<T> & {
+  selectedProviderIds: Iterable<ProviderId>;
+};
+export type SelectedProviderRelationPreferenceInput = {
+  defaultFor?: CapabilityId | CapabilityId[] | undefined;
+  providerId: ProviderId;
+  providerPreferences?: ProviderPreferenceMap | undefined;
+  selectedProviders?: ProviderPreferenceMap;
+};
+
+export type SelectedProviderRelationPreferences = {
+  defaultFor?: CapabilityId | CapabilityId[];
+  providerPreferences?: ProviderPreferenceMap;
 };
 
 export type ProviderSelection = {
@@ -33,7 +52,7 @@ export type ItemProviderSelectionResolution = ProviderSelectionResolution & {
 
 type ProviderCollectionInput<T> = {
   items: Iterable<T>;
-  getCapabilityId: (item: T) => CapabilityId | undefined;
+  getCapabilityId: (item: T) => CapabilityId | CapabilityId[] | undefined;
   getProviderId: (item: T) => ProviderId;
 };
 
@@ -41,15 +60,23 @@ export type ResolveProviderSelectionInput = {
   providersByCapability: ProvidersByCapability;
   configuredProviders?: ProviderPreferenceMap;
   fallbackProviders?: ProviderPreferenceMap;
+  selectedProviders?: ProviderPreferenceMap;
 };
 
 export type ResolveItemProviderSelectionInput<T> = ProviderCollectionInput<T> & {
   configuredProviders?: ProviderPreferenceMap;
   fallbackProviders?: ProviderPreferenceMap;
+  selectedProviders?: ProviderPreferenceMap;
 };
 
 function toSortedUniqueProviderIds(providerIds: Iterable<ProviderId>): ProviderId[] {
   return Array.from(new Set(Array.from(providerIds).filter(Boolean))).sort();
+}
+
+function toCapabilityIds(value: CapabilityId | CapabilityId[] | undefined): CapabilityId[] {
+  const entries = Array.isArray(value) ? value : [value];
+
+  return entries.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -61,6 +88,7 @@ function getSelectedProvider(input: {
   candidateProviderIds: ProviderId[];
   configuredProviders?: ProviderPreferenceMap;
   fallbackProviders?: ProviderPreferenceMap;
+  selectedProviders?: ProviderPreferenceMap;
 }): { selectedProviderId: ProviderId; mode: ProviderSelectionMode } | undefined {
   const firstProviderId = input.candidateProviderIds[0];
   if (!firstProviderId) {
@@ -77,6 +105,14 @@ function getSelectedProvider(input: {
     }
 
     return undefined;
+  }
+
+  const selectedProviderId = input.selectedProviders?.[input.capabilityId];
+  if (selectedProviderId && input.candidateProviderIds.includes(selectedProviderId)) {
+    return {
+      selectedProviderId,
+      mode: 'selected',
+    };
   }
 
   const fallbackProviderId = input.fallbackProviders?.[input.capabilityId];
@@ -107,6 +143,7 @@ function selectProviders(
       candidateProviderIds: normalizedCandidateProviderIds,
       ...(input.configuredProviders ? { configuredProviders: input.configuredProviders } : {}),
       ...(input.fallbackProviders ? { fallbackProviders: input.fallbackProviders } : {}),
+      ...(input.selectedProviders ? { selectedProviders: input.selectedProviders } : {}),
     });
 
     if (!selected) {
@@ -180,15 +217,14 @@ export function collectProvidersByCapability<T>(
   const providersByCapability: ProvidersByCapability = new Map();
 
   for (const item of input.items) {
-    const capabilityId = input.getCapabilityId(item);
-    if (!capabilityId) {
-      continue;
-    }
-
     const providerId = input.getProviderId(item);
-    const currentProviderIds = providersByCapability.get(capabilityId) ?? [];
-    currentProviderIds.push(providerId);
-    providersByCapability.set(capabilityId, toSortedUniqueProviderIds(currentProviderIds));
+    const capabilityIds = toCapabilityIds(input.getCapabilityId(item));
+
+    for (const capabilityId of capabilityIds) {
+      const currentProviderIds = providersByCapability.get(capabilityId) ?? [];
+      currentProviderIds.push(providerId);
+      providersByCapability.set(capabilityId, toSortedUniqueProviderIds(currentProviderIds));
+    }
   }
 
   return providersByCapability;
@@ -217,6 +253,75 @@ export function collectProviderPreferences<T>(
   return preferences;
 }
 
+function normalizeDefaultFor(value: unknown): CapabilityId[] {
+  const entries = Array.isArray(value) ? value : [value];
+
+  return entries.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+}
+
+export function collectProviderDefaults<T>(
+  input: ProviderDefaultCollectionInput<T>,
+): ProviderPreferenceMap {
+  let defaults: ProviderPreferenceMap = {};
+
+  for (const item of input.items) {
+    const providerId = input.getProviderId(item);
+    const capabilityIds = normalizeDefaultFor(input.getDefaultFor(item));
+
+    defaults = {
+      ...defaults,
+      ...Object.fromEntries(capabilityIds.map((capabilityId) => [capabilityId, providerId])),
+    };
+  }
+
+  return defaults;
+}
+
+export function collectSelectedProviderPreferences<T>(
+  input: SelectedProviderPreferenceCollectionInput<T>,
+): ProviderPreferenceMap {
+  const selectedProviderIds = new Set(input.selectedProviderIds);
+  const selectedItems = Array.from(input.items)
+    .filter((item) => selectedProviderIds.has(input.getProviderId(item)))
+    .sort((left, right) => input.getProviderId(left).localeCompare(input.getProviderId(right)));
+  const preferences: ProviderPreferenceMap = {};
+
+  for (const item of selectedItems) {
+    const providerId = input.getProviderId(item);
+
+    for (const capabilityId of toCapabilityIds(input.getCapabilityId(item))) {
+      if (!preferences[capabilityId]) {
+        preferences[capabilityId] = providerId;
+      }
+    }
+  }
+
+  return preferences;
+}
+
+export function resolveSelectedProviderRelationPreferences(
+  input: SelectedProviderRelationPreferenceInput,
+): SelectedProviderRelationPreferences {
+  const selectedProviders = input.selectedProviders ?? {};
+  const selectedCapabilityIds = new Set(Object.keys(selectedProviders));
+  const defaultFor = toCapabilityIds(input.defaultFor).filter(
+    (capabilityId) =>
+      !selectedProviders[capabilityId] || selectedProviders[capabilityId] === input.providerId,
+  );
+  const providerPreferences = Object.fromEntries(
+    Object.entries(input.providerPreferences ?? {}).filter(
+      ([capabilityId]) => !selectedCapabilityIds.has(capabilityId),
+    ),
+  );
+
+  return {
+    ...(defaultFor.length
+      ? { defaultFor: Array.isArray(input.defaultFor) ? defaultFor : defaultFor[0] }
+      : {}),
+    ...(Object.keys(providerPreferences).length ? { providerPreferences } : {}),
+  };
+}
+
 export function resolveProviderSelection(
   input: ResolveProviderSelectionInput,
 ): ProviderSelectionResolution {
@@ -240,6 +345,7 @@ export function resolveItemProviderSelection<T>(
     providersByCapability,
     ...(input.configuredProviders ? { configuredProviders: input.configuredProviders } : {}),
     ...(input.fallbackProviders ? { fallbackProviders: input.fallbackProviders } : {}),
+    ...(input.selectedProviders ? { selectedProviders: input.selectedProviders } : {}),
   });
 
   return {

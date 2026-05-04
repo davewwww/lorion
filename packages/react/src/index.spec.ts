@@ -78,7 +78,49 @@ describe('createCapabilityRuntime', () => {
       }),
       defineCapability({
         id: 'provider-b',
-        manifest: { id: 'provider-b', version: '0.1.0', providesFor: 'checkout' },
+        manifest: {
+          id: 'provider-b',
+          version: '0.1.0',
+          defaultFor: 'checkout',
+          providesFor: 'checkout',
+        },
+      }),
+      defineCapability({
+        id: 'shop',
+        manifest: {
+          id: 'shop',
+          version: '0.1.0',
+        },
+      }),
+    ]);
+
+    const selection = getCapabilityProviderSelection(runtime);
+
+    expect(Object.fromEntries(selection.selections)).toEqual({
+      checkout: {
+        capabilityId: 'checkout',
+        candidateProviderIds: ['provider-a', 'provider-b'],
+        mode: 'fallback',
+        selectedProviderId: 'provider-b',
+      },
+    });
+    expect(selection.excludedProviderIds).toEqual(['provider-a']);
+  });
+
+  it('uses selected providers before descriptor preferences and defaults', () => {
+    const runtime = createCapabilityRuntime([
+      defineCapability({
+        id: 'provider-a',
+        manifest: { id: 'provider-a', version: '0.1.0', providesFor: 'checkout' },
+      }),
+      defineCapability({
+        id: 'provider-b',
+        manifest: {
+          id: 'provider-b',
+          version: '0.1.0',
+          defaultFor: 'checkout',
+          providesFor: 'checkout',
+        },
       }),
       defineCapability({
         id: 'shop',
@@ -92,16 +134,20 @@ describe('createCapabilityRuntime', () => {
       }),
     ]);
 
-    const selection = getCapabilityProviderSelection(runtime);
+    const selection = getCapabilityProviderSelection(runtime, {
+      selectedProviders: {
+        checkout: 'provider-a',
+      },
+    });
 
     expect(Object.fromEntries(selection.selections)).toEqual({
       checkout: {
         capabilityId: 'checkout',
         candidateProviderIds: ['provider-a', 'provider-b'],
-        mode: 'configured',
-        selectedProviderId: 'provider-b',
+        mode: 'selected',
+        selectedProviderId: 'provider-a',
       },
     });
-    expect(selection.excludedProviderIds).toEqual(['provider-a']);
+    expect(selection.excludedProviderIds).toEqual(['provider-b']);
   });
 });

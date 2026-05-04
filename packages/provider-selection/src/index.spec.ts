@@ -1,19 +1,25 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  collectProviderDefaults,
   collectProviderPreferences,
   collectProvidersByCapability,
+  collectSelectedProviderPreferences,
   resolveItemProviderSelection,
   resolveProviderSelection,
+  resolveSelectedProviderRelationPreferences,
   type CapabilityId,
 } from './index';
 
 type Candidate = {
-  capabilityId?: CapabilityId;
+  capabilityId?: CapabilityId | CapabilityId[];
   providerId: string;
 };
 
-function createCandidate(providerId: string, capabilityId?: CapabilityId): Candidate {
+function createCandidate(
+  providerId: string,
+  capabilityId?: CapabilityId | CapabilityId[],
+): Candidate {
   return {
     providerId,
     ...(capabilityId ? { capabilityId } : {}),
@@ -28,6 +34,7 @@ describe('collectProvidersByCapability', () => {
         createCandidate('auth-local-jwt', 'auth'),
         createCandidate('mailer-postmark', 'mailer'),
         createCandidate('auth-local-jwt', 'auth'),
+        createCandidate('suite-provider', ['auth', 'mailer']),
         createCandidate('ignored'),
       ],
       getCapabilityId: (candidate) => candidate.capabilityId,
@@ -36,8 +43,8 @@ describe('collectProvidersByCapability', () => {
 
     expect(providersByCapability).toEqual(
       new Map([
-        ['auth', ['auth-local-jwt', 'keycloak']],
-        ['mailer', ['mailer-postmark']],
+        ['auth', ['auth-local-jwt', 'keycloak', 'suite-provider']],
+        ['mailer', ['mailer-postmark', 'suite-provider']],
       ]),
     );
   });
@@ -72,19 +79,104 @@ describe('collectProviderPreferences', () => {
   });
 });
 
+describe('collectProviderDefaults', () => {
+  it('collects provider-owned defaults by capability', () => {
+    const defaults = collectProviderDefaults({
+      items: [
+        {
+          id: 'keycloak',
+          defaultFor: 'auth',
+        },
+        {
+          id: 'stripe',
+          defaultFor: ['payment-checkout'],
+        },
+      ],
+      getDefaultFor: (candidate) => candidate.defaultFor,
+      getProviderId: (candidate) => candidate.id,
+    });
+
+    expect(defaults).toEqual({
+      auth: 'keycloak',
+      'payment-checkout': 'stripe',
+    });
+  });
+});
+
+describe('collectSelectedProviderPreferences', () => {
+  it('collects selected provider preferences from explicitly selected provider ids', () => {
+    const preferences = collectSelectedProviderPreferences({
+      items: [
+        createCandidate('keycloak', 'auth'),
+        createCandidate('auth-local-jwt', 'auth'),
+        createCandidate('mailer-postmark', 'mailer'),
+        createCandidate('suite-provider', ['auth', 'mailer']),
+      ],
+      getCapabilityId: (candidate) => candidate.capabilityId,
+      getProviderId: (candidate) => candidate.providerId,
+      selectedProviderIds: ['auth-local-jwt', 'suite-provider'],
+    });
+
+    expect(preferences).toEqual({
+      auth: 'auth-local-jwt',
+      mailer: 'suite-provider',
+    });
+  });
+});
+
+describe('resolveSelectedProviderRelationPreferences', () => {
+  it('removes lower-priority provider relations when a provider is explicitly selected', () => {
+    expect(
+      resolveSelectedProviderRelationPreferences({
+        providerId: 'keycloak',
+        defaultFor: ['auth', 'profile'],
+        providerPreferences: {
+          auth: 'keycloak',
+          storage: 'storage-s3',
+        },
+        selectedProviders: {
+          auth: 'auth-local-jwt',
+        },
+      }),
+    ).toEqual({
+      defaultFor: ['profile'],
+      providerPreferences: {
+        storage: 'storage-s3',
+      },
+    });
+
+    expect(
+      resolveSelectedProviderRelationPreferences({
+        providerId: 'auth-local-jwt',
+        defaultFor: 'auth',
+        selectedProviders: {
+          auth: 'auth-local-jwt',
+        },
+      }),
+    ).toEqual({
+      defaultFor: 'auth',
+    });
+  });
+});
+
 describe('resolveProviderSelection', () => {
-  it('prefers configured providers, then fallbacks, then first provider', () => {
+  it('prefers configured providers, then selected providers, then fallbacks, then first provider', () => {
     const result = resolveProviderSelection({
       providersByCapability: new Map([
         ['auth', ['keycloak', 'auth-local-jwt']],
         ['mailer', ['mailer-postmark', 'mailer-resend']],
         ['search', ['search-meilisearch', 'search-db']],
+        ['storage', ['storage-local', 'storage-s3']],
       ]),
       configuredProviders: {
         auth: 'keycloak',
       },
       fallbackProviders: {
         mailer: 'mailer-resend',
+        storage: 'storage-s3',
+      },
+      selectedProviders: {
+        storage: 'storage-local',
       },
     });
 
@@ -117,6 +209,15 @@ describe('resolveProviderSelection', () => {
             mode: 'first',
           },
         ],
+        [
+          'storage',
+          {
+            capabilityId: 'storage',
+            selectedProviderId: 'storage-local',
+            candidateProviderIds: ['storage-local', 'storage-s3'],
+            mode: 'selected',
+          },
+        ],
       ]),
     );
     expect(result.mismatches).toEqual([]);
@@ -124,6 +225,7 @@ describe('resolveProviderSelection', () => {
       'auth-local-jwt',
       'mailer-postmark',
       'search-meilisearch',
+      'storage-s3',
     ]);
   });
 

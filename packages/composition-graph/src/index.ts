@@ -1,4 +1,9 @@
-export { assertKnownDescriptorIds, buildDescriptorMap, parseDescriptorIds } from './descriptorMap';
+export {
+  assertKnownDescriptorIds,
+  buildDescriptorMap,
+  parseDescriptorIds,
+  resolveDescriptorSelectionSeed,
+} from './descriptorMap';
 export {
   buildDescriptorGraph,
   defaultRelationDescriptors,
@@ -30,3 +35,4 @@ export type {
   ResolutionStep,
   VersionConstraintMap,
 } from './types';
+export type { DescriptorSelectionSeedInput } from './descriptorMap';

@@ -8,14 +8,11 @@ import { lorionReact } from '../src/vite';
 const playgroundRoot = dirname(fileURLToPath(import.meta.url));
 const routesDirectory = resolve(playgroundRoot, 'src/routes');
 const generatedRouteTree = resolve(playgroundRoot, 'src/routeTree.gen.ts');
-const capabilityComposition = {
-  selected: ['default'],
-};
 const lorion = lorionReact({
   workspaceRoot: playgroundRoot,
   routesDirectory,
   indexRouteFile: false,
-  ...capabilityComposition,
+  defaultSelection: ['default'],
 });
 
 export default defineConfig({

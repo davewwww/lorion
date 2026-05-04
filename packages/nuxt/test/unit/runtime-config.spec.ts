@@ -182,6 +182,7 @@ describe('nuxt runtime config adapter', () => {
             'payment-checkout': 'payment-provider-stripe',
           },
           excludedProviderIds: ['payment-provider-invoice'],
+          fallbackProviders: {},
           mismatches: [],
           selections: {
             'payment-checkout': {
@@ -365,6 +366,7 @@ describe('nuxt runtime config adapter', () => {
       ]),
     ).toEqual({
       fileName: paths[0],
+      invalid: [],
       skipped: [],
       validated: [
         {

@@ -17,6 +17,7 @@ import {
   projectRuntimeConfigTree,
   parseRuntimeConfigFragmentFiles,
   readJsonFile,
+  readRuntimeConfigSchemaRegistry,
   readRuntimeConfigScopeJson,
   readRequiredJsonFile,
   readTextFile,
@@ -31,6 +32,8 @@ import {
   showRuntimeConfigFragment,
   getRuntimeConfigValue,
   getRuntimeConfigScopeView,
+  assertRequiredRuntimeConfigValidationTargets,
+  collectRuntimeConfigSchemaTargetValidationErrors,
   validateRuntimeConfigScopes,
   validateRuntimeConfigSourceScopes,
   validateRuntimeConfigSchemaTargets,
@@ -502,17 +505,8 @@ describe('path pattern runtime config sources', () => {
       ),
     ).toEqual({
       fileName: source.paths[0],
-      skipped: [
-        {
-          reason: 'missing-config',
-          schemaPath: path.join(mailDir, 'scope.schema.json'),
-          scopeId: 'mail',
-        },
-        {
-          reason: 'missing-scope-dir',
-          scopeId: 'missing',
-        },
-      ],
+      invalid: [],
+      skipped: [],
       validated: [
         {
           configPath: path.join(varDir, 'runtime-config', 'billing', 'runtime.config.json'),
@@ -748,19 +742,8 @@ describe('validateRuntimeConfigScopes', () => {
       ),
     ).toEqual({
       fileName: 'runtime.config.json',
-      skipped: [
-        {
-          configPath: path.join(varDir, 'runtime-config', 'mail', 'runtime.config.json'),
-          reason: 'missing-config',
-          schemaPath: path.join(mailDir, 'scope.schema.json'),
-          scopeId: 'mail',
-        },
-        {
-          configPath: path.join(varDir, 'runtime-config', 'missing', 'runtime.config.json'),
-          reason: 'missing-scope-dir',
-          scopeId: 'missing',
-        },
-      ],
+      invalid: [],
+      skipped: [],
       validated: [
         {
           configPath: path.join(varDir, 'runtime-config', 'billing', 'runtime.config.json'),
@@ -770,6 +753,123 @@ describe('validateRuntimeConfigScopes', () => {
       ],
       varDir,
     });
+  });
+
+  it('uses runtime config validation policy for startup checks and schema registry reads', () => {
+    const varDir = createTempRoot();
+    const onUseDir = path.join(varDir, 'on-use');
+    const startupDir = path.join(varDir, 'startup');
+    mkdirSync(path.join(varDir, 'runtime-config', 'on-use'), { recursive: true });
+    mkdirSync(onUseDir, { recursive: true });
+    mkdirSync(startupDir, { recursive: true });
+    writeJson(path.join(varDir, 'runtime-config', 'on-use', 'runtime.config.json'), {
+      public: {
+        apiBase: '/api/on-use',
+      },
+    });
+    writeJson(path.join(onUseDir, 'scope.schema.json'), {
+      type: 'object',
+      properties: {
+        public: {
+          type: 'object',
+          properties: {
+            apiBase: {
+              type: 'string',
+              minLength: 20,
+            },
+          },
+          required: ['apiBase'],
+        },
+      },
+      required: ['public'],
+    });
+
+    const targets = [
+      { scopeId: 'on-use', cwd: onUseDir, policy: { validation: 'onUse' as const } },
+      { scopeId: 'startup', cwd: startupDir, policy: { validation: 'startup' as const } },
+    ];
+    const result = validateRuntimeConfigScopes(varDir, targets, {
+      schemaFileName: 'scope.schema.json',
+    });
+
+    expect(result.invalid.map((entry) => entry.scopeId)).toEqual(['on-use']);
+    expect(result.validated).toEqual([
+      {
+        configPath: path.join(varDir, 'runtime-config', 'on-use', 'runtime.config.json'),
+        schemaPath: path.join(onUseDir, 'scope.schema.json'),
+        scopeId: 'on-use',
+      },
+    ]);
+    expect(result.skipped).toEqual([
+      {
+        configPath: path.join(varDir, 'runtime-config', 'startup', 'runtime.config.json'),
+        reason: 'missing-config',
+        schemaPath: path.join(startupDir, 'scope.schema.json'),
+        scopeId: 'startup',
+      },
+    ]);
+    expect(
+      readRuntimeConfigSchemaRegistry(targets, {
+        schemaFileName: 'scope.schema.json',
+      }),
+    ).toEqual({
+      'on-use': {
+        type: 'object',
+        properties: {
+          public: {
+            properties: {
+              apiBase: {
+                minLength: 20,
+                type: 'string',
+              },
+            },
+            required: ['apiBase'],
+            type: 'object',
+          },
+        },
+        required: ['public'],
+      },
+    });
+    expect(() => assertRequiredRuntimeConfigValidationTargets(result, targets)).toThrowError(
+      /RuntimeConfig file missing for scope "startup"/,
+    );
+  });
+
+  it('explains missing schema files as the missing validation contract', () => {
+    const varDir = createTempRoot();
+    const scopeDir = path.join(varDir, 'scopes', 'auth');
+    mkdirSync(path.join(varDir, 'runtime-config', 'auth'), { recursive: true });
+    mkdirSync(scopeDir, { recursive: true });
+    writeJson(path.join(varDir, 'runtime-config', 'auth', 'runtime.config.json'), {
+      public: {
+        realm: 'demo',
+      },
+    });
+
+    const targets = [
+      { scopeId: 'auth', cwd: scopeDir, policy: { validation: 'startup' as const } },
+    ];
+    const result = validateRuntimeConfigScopes(varDir, targets, {
+      schemaFileName: 'scope.schema.json',
+    });
+
+    expect(result.skipped).toEqual([
+      {
+        configPath: path.join(varDir, 'runtime-config', 'auth', 'runtime.config.json'),
+        reason: 'missing-schema',
+        schemaPath: path.join(scopeDir, 'scope.schema.json'),
+        scopeId: 'auth',
+      },
+    ]);
+    expect(() => assertRequiredRuntimeConfigValidationTargets(result, targets)).toThrowError(
+      new RegExp(
+        [
+          'RuntimeConfig schema file missing for scope "auth"',
+          'missing schema file:',
+          'runtime config file:',
+        ].join('[\\s\\S]*'),
+      ),
+    );
   });
 });
 
@@ -866,5 +966,42 @@ describe('validateRuntimeConfigSchemaTargets', () => {
         },
       ),
     ).toThrowError('Adapter failed: mail');
+  });
+
+  it('collects all validation errors without throwing on the first invalid target', () => {
+    const varDir = createTempRoot();
+    const firstSchemaPath = path.join(varDir, 'first.schema.json');
+    const firstConfigPath = path.join(varDir, 'first.runtime.json');
+    const secondSchemaPath = path.join(varDir, 'second.schema.json');
+    const secondConfigPath = path.join(varDir, 'second.runtime.json');
+    writeJson(firstSchemaPath, {
+      type: 'object',
+      required: ['public'],
+    });
+    writeJson(firstConfigPath, {});
+    writeJson(secondSchemaPath, {
+      type: 'object',
+      required: ['private'],
+    });
+    writeJson(secondConfigPath, {});
+
+    const invalid = collectRuntimeConfigSchemaTargetValidationErrors([
+      {
+        configPath: firstConfigPath,
+        schemaPath: firstSchemaPath,
+        scopeId: 'first',
+      },
+      {
+        configPath: secondConfigPath,
+        schemaPath: secondSchemaPath,
+        scopeId: 'second',
+      },
+    ]);
+
+    expect(invalid.map((entry) => entry.scopeId)).toEqual(['first', 'second']);
+    expect(invalid.map((entry) => entry.error.message)).toEqual([
+      expect.stringContaining('Scope: first'),
+      expect.stringContaining('Scope: second'),
+    ]);
   });
 });

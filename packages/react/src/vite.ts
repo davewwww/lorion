@@ -1,17 +1,30 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
+import process from 'node:process';
 import {
   createCompositionSelection,
   createDescriptorCatalog,
+  resolveDescriptorSelectionSeed,
   type CompositionPolicy,
   type Descriptor,
   type DescriptorId,
+  type DescriptorSelectionSeedInput,
+  type RelationDescriptor,
 } from '@lorion-org/composition-graph';
 import {
   descriptorSchema,
   discoverDescriptors,
   type DiscoveredDescriptor,
 } from '@lorion-org/descriptor-discovery';
+import {
+  collectSelectedProviderPreferences,
+  resolveSelectedProviderRelationPreferences,
+  type ProviderPreferenceMap,
+} from '@lorion-org/provider-selection';
+import {
+  createCapabilityCompositionPolicy,
+  defaultCapabilityRelationDescriptors,
+} from './relations';
 
 const virtualModuleId = 'virtual:capabilities';
 const resolvedVirtualModuleId = `\0${virtualModuleId}`;
@@ -19,10 +32,15 @@ const resolvedVirtualModuleId = `\0${virtualModuleId}`;
 export type CapabilityLoaderOptions = {
   capabilitiesDir?: string;
   baseDescriptors?: readonly DescriptorId[];
+  defaultSelection?: readonly DescriptorId[];
   policy?: Partial<CompositionPolicy>;
+  relationDescriptors?: readonly RelationDescriptor[];
   selected?: readonly DescriptorId[];
+  selectionSeed?: false | CapabilitySelectionSeedOptions;
   workspaceRoot?: string;
 };
+
+export type CapabilitySelectionSeedOptions = Omit<DescriptorSelectionSeedInput, 'defaultValue'>;
 
 export type CapabilityRouteConfigOptions = CapabilityLoaderOptions & {
   indexRouteFile?: false | string;
@@ -99,7 +117,7 @@ export function capabilityLoader(options: CapabilityLoaderOptions = {}): VitePlu
     load(id) {
       if (id !== resolvedVirtualModuleId) return null;
 
-      return renderCapabilityModule(capabilities);
+      return renderCapabilityModule(capabilities, resolveSelectionSeed(options));
     },
   };
 }
@@ -135,29 +153,108 @@ export function discoverSelectedCapabilities(
 
 function selectCapabilities(
   capabilities: readonly DiscoveredCapability[],
-  options: Pick<CapabilityLoaderOptions, 'baseDescriptors' | 'policy' | 'selected'> = {},
+  options: Pick<
+    CapabilityLoaderOptions,
+    | 'baseDescriptors'
+    | 'defaultSelection'
+    | 'policy'
+    | 'relationDescriptors'
+    | 'selected'
+    | 'selectionSeed'
+  > = {},
 ): DiscoveredCapability[] {
   const enabledCapabilities = capabilities.filter((capability) => capability.disabled !== true);
+  const selected = resolveCapabilitySelectionSeed(options);
 
-  if (!options.selected?.length && !options.baseDescriptors?.length) {
+  if (!selected.length && !options.baseDescriptors?.length) {
     return [...enabledCapabilities];
   }
 
+  const selectedProviders = collectSelectedProviderPreferences({
+    items: enabledCapabilities,
+    getCapabilityId: (capability) => capability.manifest.providesFor,
+    getProviderId: (capability) => capability.id,
+    selectedProviderIds: selected,
+  });
+  const selectionCapabilities = createProviderSelectionAwareCapabilities(
+    enabledCapabilities,
+    selectedProviders,
+  );
   const catalog = createDescriptorCatalog({
-    descriptors: enabledCapabilities.map((capability) => capability.manifest),
+    descriptors: selectionCapabilities.map((capability) => capability.manifest),
+    relationDescriptors: [
+      ...defaultCapabilityRelationDescriptors,
+      ...(options.relationDescriptors ?? []),
+    ],
   });
   const selection = createCompositionSelection({
     catalog,
-    selected: [...(options.selected ?? [])],
+    selected: [...selected],
     baseDescriptors: [...(options.baseDescriptors ?? [])],
-    ...(options.policy ? { policy: options.policy } : {}),
+    policy: createCapabilityCompositionPolicy(options.policy),
   });
   const selectedIds = new Set(selection.getResolved());
 
-  return enabledCapabilities.filter((capability) => selectedIds.has(capability.id));
+  return selectionCapabilities.filter((capability) => selectedIds.has(capability.id));
 }
 
-export function renderCapabilityModule(capabilities: readonly DiscoveredCapability[]): string {
+function createProviderSelectionAwareCapabilities(
+  capabilities: readonly DiscoveredCapability[],
+  selectedProviders: ProviderPreferenceMap,
+): DiscoveredCapability[] {
+  if (!Object.keys(selectedProviders).length) return [...capabilities];
+
+  return capabilities.map((capability) => {
+    const manifest = { ...capability.manifest };
+    const preferences = resolveSelectedProviderRelationPreferences({
+      providerId: capability.id,
+      defaultFor: manifest.defaultFor,
+      providerPreferences: manifest.providerPreferences as ProviderPreferenceMap | undefined,
+      selectedProviders,
+    });
+
+    delete manifest.defaultFor;
+    delete manifest.providerPreferences;
+
+    return {
+      ...capability,
+      manifest: {
+        ...manifest,
+        ...preferences,
+      },
+    };
+  });
+}
+
+function resolveSelectionSeed(
+  options: Pick<CapabilityLoaderOptions, 'defaultSelection' | 'selected' | 'selectionSeed'>,
+): DescriptorId[] {
+  return resolveCapabilitySelectionSeed(options);
+}
+
+function resolveCapabilitySelectionSeed(
+  options: Pick<CapabilityLoaderOptions, 'defaultSelection' | 'selected' | 'selectionSeed'>,
+): DescriptorId[] {
+  if (options.selected?.length) return [...options.selected];
+
+  if (options.selectionSeed === false) return [...(options.defaultSelection ?? [])];
+
+  const seedOptions = options.selectionSeed ?? {};
+  const selected = resolveDescriptorSelectionSeed({
+    argv: seedOptions.argv ?? process.argv,
+    env: seedOptions.env ?? process.env,
+    key: seedOptions.key ?? 'capability',
+    ...(seedOptions.cliKeys ? { cliKeys: seedOptions.cliKeys } : {}),
+    ...(seedOptions.envKeys ? { envKeys: seedOptions.envKeys } : {}),
+  });
+
+  return selected.length ? selected : [...(options.defaultSelection ?? [])];
+}
+
+export function renderCapabilityModule(
+  capabilities: readonly DiscoveredCapability[],
+  selected: readonly DescriptorId[] = [],
+): string {
   const imports = capabilities
     .map(
       (capability) =>
@@ -165,8 +262,13 @@ export function renderCapabilityModule(capabilities: readonly DiscoveredCapabili
     )
     .join('\n');
   const variables = capabilities.map((capability) => `  ${capability.variableName},`).join('\n');
+  const capabilityIds = capabilities.map((capability) => capability.id);
 
   return `${imports}
+
+export const selectedCapabilityIds = ${JSON.stringify([...selected])}
+
+export const resolvedCapabilityIds = ${JSON.stringify(capabilityIds)}
 
 export const capabilityModules = [
 ${variables}

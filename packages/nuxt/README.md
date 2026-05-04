@@ -19,6 +19,9 @@ variants, optional providers, or profile-based feature sets.
 pnpm add @lorion-org/nuxt
 ```
 
+Host configs that import selection helpers from `@lorion-org/composition-graph`
+should declare that package directly too.
+
 ## What it is
 
 - a Nuxt 4 adapter for LORION layer orchestration
@@ -122,7 +125,7 @@ test/
 - `src/extensions.ts` contains descriptor discovery, selection, bootstrap, and extension-owned runtime config.
 - `src/runtime-config.ts` contains universal runtime-config adapter helpers.
 - `src/runtime-config-node.ts` contains Node-only source loading helpers.
-- The published package exports only the root Nuxt module. Runtime-config composables are generated and auto-imported by the module.
+- The published package exports the root Nuxt module, runtime-config subpaths, the descriptor schema, and runtime-safe extension helpers under `@lorion-org/nuxt/extensions`. Runtime-config composables are generated and auto-imported by the module.
 - `examples/` contains Nuxt-focused config and server-route snippets.
 - `playground/` is a runnable Nuxt app for manual module development.
 - `test/fixtures/` contains Nuxt applications used by end-to-end tests, and `test/unit/` contains package unit tests.
@@ -182,15 +185,22 @@ config object and public values below `runtimeConfig.public`. Set
 `privateOutput: 'section'` when the target runtime should keep private values
 below `runtimeConfig.private`.
 
-The module also auto-imports runtime-config composables unless
-`runtimeConfig.imports` is `false`.
+The module also auto-imports runtime-config composables when
+`runtimeConfig.imports` is `true`, or when it is omitted and the host Nuxt app
+keeps import scanning enabled. Hosts that set `imports.scan: false` can import
+the generated composables explicitly instead:
 
 ```ts
+import { usePublicRuntimeConfigScope } from '#build/lorion/runtime-config-composables';
+
 const checkout = usePublicRuntimeConfigScope('checkout');
 
 checkout.successPath;
 // => '/orders/confirmed'
 ```
+
+Nitro server plugins can import from
+`#internal/lorion-runtime-config-composables.mjs`.
 
 Configured module options such as `contextOutputKey` and `privateOutput` are
 used by these composables automatically.
@@ -296,9 +306,26 @@ export default defineNuxtConfig({
 });
 ```
 
-Applications that want CLI or env driven selection should normalize those
-inputs locally and pass the resulting seed ids through `options.selected`.
-The LORION bootstrap only receives canonical selection ids and resolves the graph.
+Applications that want CLI or env driven selection can use the shared
+capability seed directly. By default the Nuxt bootstrap reads `--capabilities`,
+`npm_config_capabilities`, and `LORION_CAPABILITIES` before falling back to
+`defaultSelection`.
+
+```ts
+const extensionBootstrap = createNuxtExtensionBootstrap({
+  rootDir: __dirname,
+  options: {
+    defaultSelection: 'default',
+  },
+});
+```
+
+No `selectionSeed.key` option is required for the default capability seed. Pass
+`selectionSeed` only when the host needs to override the seed names, inject
+custom `argv`/`env` for tests, or set `selectionSeed: false` to disable CLI/env
+lookup.
+
+The LORION bootstrap receives canonical selection ids and resolves the graph.
 
 ## Provider Selection
 
@@ -308,25 +335,38 @@ Provider extensions can declare the capability they implement:
 {
   "id": "payment-provider-stripe",
   "version": "1.0.0",
-  "providesFor": "payment-checkout"
+  "providesFor": "checkout",
+  "defaultFor": "checkout"
 }
 ```
 
+`providesFor` and `defaultFor` both accept a string or string array. Use
+`defaultFor` when the provider package owns the normal/default provider choice.
+If a descriptor exists for that capability, the Nuxt bootstrap also treats
+`defaultFor` as a composition relation from the capability to the provider.
+
 The module writes a public `providerSelection` object with selected providers,
-candidates, excluded providers, configured providers, and mismatches. Profiles
-can declare provider preferences in descriptor metadata:
+candidates, excluded providers, configured providers, fallback providers, and
+mismatches. Profiles can declare provider preferences in descriptor metadata
+when the profile owns the default choice:
 
 ```json
 {
   "id": "checkout-profile",
   "version": "1.0.0",
   "providerPreferences": {
-    "payment-checkout": "payment-provider-invoice"
+    "checkout": "payment-provider-invoice"
   }
 }
 ```
 
-Module options can still override the selected provider when a host app needs a
+If a provider descriptor is explicitly selected through the normal selection
+seed, that provider wins for its capability over descriptor preferences and
+`defaultFor` relations. This affects composition resolution too: a losing
+provider is not activated only because it declared `defaultFor`, unless another
+hard dependency still pulls it into the graph.
+
+Module options override the selected provider when a host app needs a
 deployment-specific choice:
 
 ```ts
@@ -339,7 +379,7 @@ export default defineNuxtConfig({
         extensionBootstrap,
         providers: {
           configuredProviders: {
-            'payment-checkout': 'payment-provider-invoice',
+            checkout: 'payment-provider-invoice',
           },
         },
       },
@@ -347,6 +387,10 @@ export default defineNuxtConfig({
   ],
 });
 ```
+
+Hosts that resolve provider choices outside the extension bootstrap can pass
+`providers.selectedProviders`; `providers.configuredProviders` remains the
+higher-priority deployment override.
 
 ## Runtime Config
 
@@ -432,7 +476,15 @@ Run the local playground from this package:
 pnpm dev:playground
 ```
 
-Select a playground composition by passing `extensions.selected` in Nuxt config:
+The playground scripts run with Lorion's `lorion-source` export condition so
+local workspace package imports resolve to `src` instead of stale `dist` output.
+
+Select a playground composition through the seed CLI or environment:
+
+```shell
+pnpm dev:playground -- --capabilities=web,payment-provider-invoice
+LORION_CAPABILITIES="web payment-provider-invoice" pnpm dev:playground
+```
 
 The playground uses the module with no manual extension list in `nuxt.config.ts`.
 It configures only the presentation-specific descriptor paths, loads runtime
@@ -443,22 +495,22 @@ The playground intentionally overrides the default extension root to make the
 demo concept visible:
 
 ```ts
-import LorionNuxtModule from '../src/module';
+import LorionNuxtModule, {
+  createNuxtExtensionBootstrap,
+  createNuxtExtensionLayerPaths,
+} from '@lorion-org/nuxt';
+
+const extensionBootstrap = createNuxtExtensionBootstrap({
+  rootDir: __dirname,
+  options: {
+    defaultSelection: 'default',
+    descriptorPaths: ['layer-extensions/*/extension.json'],
+  },
+});
 
 export default defineNuxtConfig({
-  modules: [LorionNuxtModule],
-  lorion: {
-    extensions: {
-      defaultSelection: 'default',
-      descriptorPaths: ['layer-extensions/*/extension.json'],
-      selected: 'default',
-    },
-    providers: {
-      configuredProviders: {
-        'payment-checkout': 'payment-provider-stripe',
-      },
-    },
-  },
+  extends: createNuxtExtensionLayerPaths(extensionBootstrap),
+  modules: [[LorionNuxtModule, { extensionBootstrap, logging: true }]],
 });
 ```
 
@@ -491,17 +543,19 @@ routes. The `admin` layer extension provides the admin home route at
 `/` for admin profiles. The technical integration monitor lives at `/tech`.
 
 The default profile points to a neutral `web` profile. It starts the shop home
-with both payment-provider extensions mounted as candidates. The playground
-config selects Stripe through `lorion.providers.configuredProviders`, and
-`@lorion-org/provider-selection` publishes the selected provider. `admin` starts
-the admin home without loading the shop or payment-provider extensions.
+with Stripe as the checkout provider because the Stripe provider descriptor
+declares `defaultFor: "checkout"`. Selecting `web payment-provider-invoice`
+overrides that default and leaves Stripe out of the resolved graph. `admin`
+starts the admin home without loading the shop or payment-provider extensions.
 
-To run variants side by side, select the profile in playground config and pass
-different Nuxt ports:
+To run variants side by side, select the seed on the CLI and pass different
+Nuxt ports:
 
 ```shell
 pnpm dev:playground -- --port 3037
 pnpm dev:playground -- --port 3039
+pnpm dev:playground -- --capabilities=admin --port 3041
+pnpm dev:playground -- --capabilities=web,payment-provider-invoice --port 3043
 ```
 
 Each extension contributes only the Nuxt layer content it needs. The module
@@ -509,9 +563,10 @@ registers selected extensions as Nuxt layers; the playground does not list them
 in `nuxt.config.ts`.
 Provider extensions contribute checkout pages, register a small checkout
 provider implementation through the payments layer interface, and expose server
-routes. They declare `providesFor: "payment-checkout"`, while the Nuxt module
-options provide the selected preference. Runtime config for checkout, payments,
-and providers is loaded from
+routes. They declare `providesFor: "checkout"`; Stripe additionally
+declares `defaultFor: "checkout"` so the playground demonstrates the
+provider-owned default pattern. Runtime config for checkout, payments, and
+providers is loaded from
 `.runtimeconfig/runtime-config/<scope>/runtime.config.json`.
 
 The module also exposes a public `extensionSelection` runtime-config object with

@@ -147,7 +147,11 @@ importers:
 
   packages/registry-hub: {}
 
-  packages/runtime-config: {}
+  packages/runtime-config:
+    dependencies:
+      ajv:
+        specifier: ^8.17.1
+        version: 8.20.0
 
   packages/runtime-config-node:
     dependencies:

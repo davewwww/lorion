@@ -6,6 +6,7 @@ import lorionNuxtModule, {
   createNuxtExtensionBootstrapLogEvent,
   formatNuxtExtensionBootstrapLog,
   reportNuxtExtensionBootstrap,
+  shouldRegisterRuntimeConfigImports,
 } from '../../src/module';
 
 describe('LORION Nuxt module', () => {
@@ -54,6 +55,14 @@ describe('LORION Nuxt module', () => {
     });
   });
 
+  it('follows the host Nuxt import scan policy for runtime config auto-imports', () => {
+    expect(shouldRegisterRuntimeConfigImports({}, { scan: false })).toBe(false);
+    expect(shouldRegisterRuntimeConfigImports({}, { scan: true })).toBe(true);
+    expect(shouldRegisterRuntimeConfigImports({}, undefined)).toBe(true);
+    expect(shouldRegisterRuntimeConfigImports({ imports: true }, { scan: false })).toBe(true);
+    expect(shouldRegisterRuntimeConfigImports({ imports: false }, { scan: true })).toBe(false);
+  });
+
   it('does not call a reporter when bootstrap logging is omitted', () => {
     const bootstrap = createNuxtExtensionBootstrap({
       rootDir: join(__dirname, '../fixtures/extensions'),
@@ -96,6 +105,7 @@ describe('LORION Nuxt module', () => {
               payment: 'stripe',
             },
             excludedProviderIds: ['invoice'],
+            fallbackProviders: {},
             mismatches: [],
             selections: {
               payment: {
@@ -115,6 +125,7 @@ describe('LORION Nuxt module', () => {
         payment: 'stripe',
       },
       excludedProviderIds: ['invoice'],
+      fallbackProviders: {},
       mismatches: [],
       selections: {
         payment: {
@@ -140,6 +151,7 @@ describe('LORION Nuxt module', () => {
             payment: 'stripe',
           },
           excludedProviderIds: ['invoice'],
+          fallbackProviders: {},
           mismatches: [],
           selections: {
             payment: {

@@ -50,7 +50,7 @@ export function getPaymentSelectionOverview(runtime: CapabilityRuntime): Payment
 
 export function getPaymentProvider(
   runtime: CapabilityRuntime,
-  capabilityId = 'payment-checkout',
+  capabilityId = 'checkout',
 ): PaymentCheckoutProvider | undefined {
   const selectedProviderId =
     getPaymentSelectionOverview(runtime).selections[capabilityId]?.selectedProviderId;

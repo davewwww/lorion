@@ -10,11 +10,17 @@ import {
   projectRuntimeConfigEnvVars,
   toRuntimeConfigFragment,
   runtimeEnvVarsToShellAssignments,
+  resolveRuntimeConfigValidationMode,
+  shouldRegisterRuntimeConfigValidationSchema,
+  shouldRequireRuntimeConfigAtStartup,
   type ConfigVisibility,
   type GetRuntimeConfigScopeOptions,
   type ProjectRuntimeConfigEnvVarsOptions,
   type RuntimeConfigFragment,
   type RuntimeConfigFragmentMap,
+  type RuntimeConfigValidationPolicyInput,
+  type RuntimeConfigValidationMode,
+  type RuntimeConfigValidationSchemaRegistry,
   type RuntimeEnvVars,
   type RuntimeConfigSection,
   type SectionedRuntimeConfig,
@@ -157,6 +163,7 @@ export type RuntimeConfigScopeViewResult = {
 
 export type RuntimeConfigSchemaTargetInput = {
   cwd?: string;
+  policy?: RuntimeConfigValidationPolicyInput;
   scopeId: string;
 };
 
@@ -173,6 +180,10 @@ export type RuntimeConfigValidationSkippedEntry = {
   scopeId: string;
 };
 
+export type RuntimeConfigValidationInvalidEntry = RuntimeConfigSchemaValidationTarget & {
+  error: Error;
+};
+
 export type ValidateRuntimeConfigScopesOptions = RuntimeConfigPathOptions & {
   formatError?: RuntimeConfigSchemaValidationErrorFormatter;
   schemaFileName?: string;
@@ -185,9 +196,14 @@ export type ValidateRuntimeConfigPatternSourceScopesOptions = Pick<
 
 export type RuntimeConfigValidateResult = {
   fileName: string;
+  invalid: RuntimeConfigValidationInvalidEntry[];
   skipped: RuntimeConfigValidationSkippedEntry[];
   validated: RuntimeConfigValidationEntry[];
   varDir: string;
+};
+
+export type ReadRuntimeConfigSchemaRegistryOptions = {
+  schemaFileName?: string;
 };
 
 const defaultRuntimeConfigFileName = 'runtime.config.json';
@@ -320,6 +336,43 @@ function getRuntimeConfigPathOptions(source: RuntimeConfigSource): RuntimeConfig
 
 function getSchemaFileName(options: ValidateRuntimeConfigScopesOptions): string {
   return options.schemaFileName ?? defaultRuntimeConfigSchemaFileName;
+}
+
+function formatMissingRuntimeConfigValidationError(
+  skipped: RuntimeConfigValidationSkippedEntry,
+): Error {
+  if (skipped.reason === 'missing-schema') {
+    return new Error(
+      [
+        `RuntimeConfig schema file missing for scope "${skipped.scopeId}".`,
+        ...(skipped.schemaPath ? [`missing schema file: ${skipped.schemaPath}`] : []),
+        ...(skipped.configPath ? [`runtime config file: ${skipped.configPath}`] : []),
+      ].join(' '),
+    );
+  }
+
+  if (skipped.reason === 'missing-config') {
+    return new Error(
+      [
+        `RuntimeConfig file missing for scope "${skipped.scopeId}".`,
+        ...(skipped.configPath ? [`expected runtime config file: ${skipped.configPath}`] : []),
+        ...(skipped.schemaPath ? [`schema file: ${skipped.schemaPath}`] : []),
+      ].join(' '),
+    );
+  }
+
+  const details = [
+    `RuntimeConfig validation target has no schema directory for scope "${skipped.scopeId}".`,
+  ];
+
+  if (skipped.configPath) details.push(`runtime config file: ${skipped.configPath}`);
+  if (skipped.schemaPath) details.push(`schema file: ${skipped.schemaPath}`);
+
+  return new Error(details.join(' '));
+}
+
+function shouldReportMissingRuntimeConfig(mode: RuntimeConfigValidationMode): boolean {
+  return mode !== 'optional';
 }
 
 function stripJsonBom(text: string): string {
@@ -629,12 +682,24 @@ export function validateRuntimeConfigSchemaTargets(
   targets: RuntimeConfigSchemaValidationTarget[],
   options: ValidateRuntimeConfigSchemaTargetsOptions = {},
 ): void {
+  const invalid = collectRuntimeConfigSchemaTargetValidationErrors(targets, options);
+
+  if (invalid[0]) {
+    throw invalid[0].error;
+  }
+}
+
+export function collectRuntimeConfigSchemaTargetValidationErrors(
+  targets: RuntimeConfigSchemaValidationTarget[],
+  options: ValidateRuntimeConfigSchemaTargetsOptions = {},
+): RuntimeConfigValidationInvalidEntry[] {
   const ajv = new Ajv({
     strict: false,
     allErrors: false,
     ...options.ajvOptions,
   });
   const formatError = options.formatError ?? formatRuntimeConfigSchemaValidationError;
+  const invalid: RuntimeConfigValidationInvalidEntry[] = [];
 
   for (const target of targets) {
     if (!existsSync(target.schemaPath) || !existsSync(target.configPath)) {
@@ -649,14 +714,23 @@ export function validateRuntimeConfigSchemaTargets(
     if (!isValid) {
       const validationError = validate.errors?.[0];
       if (validationError) {
-        throw formatError(target, validationError);
+        invalid.push({
+          ...target,
+          error: formatError(target, validationError),
+        });
+        continue;
       }
 
-      throw new Error(
-        `RuntimeConfig schema validation failed for "${target.scopeId}" (${target.configPath})`,
-      );
+      invalid.push({
+        ...target,
+        error: new Error(
+          `RuntimeConfig schema validation failed for "${target.scopeId}" (${target.configPath})`,
+        ),
+      });
     }
   }
+
+  return invalid;
 }
 
 export function loadRuntimeConfigTree(
@@ -832,25 +906,33 @@ export function validateRuntimeConfigScopes(
   const schemaFileName = getSchemaFileName(options);
   const result: RuntimeConfigValidateResult = {
     fileName: getFileName(options),
+    invalid: [],
     skipped: [],
     validated: [],
     varDir,
   };
 
   for (const target of targets) {
+    if (!shouldRegisterRuntimeConfigValidationSchema(target.policy)) continue;
+
     const scopeId = target.scopeId.trim();
     if (!scopeId) continue;
 
+    const mode = resolveRuntimeConfigValidationMode(target.policy);
     const configPath = resolveRuntimeConfigPaths(varDir, scopeId, options).filePath;
     const schemaPath = target.cwd ? path.resolve(target.cwd, schemaFileName) : undefined;
 
     if (!target.cwd || !schemaPath) {
-      result.skipped.push({ configPath, reason: 'missing-scope-dir', scopeId });
+      if (shouldReportMissingRuntimeConfig(mode)) {
+        result.skipped.push({ configPath, reason: 'missing-scope-dir', scopeId });
+      }
       continue;
     }
 
     if (!existsSync(configPath)) {
-      result.skipped.push({ configPath, reason: 'missing-config', schemaPath, scopeId });
+      if (shouldReportMissingRuntimeConfig(mode)) {
+        result.skipped.push({ configPath, reason: 'missing-config', schemaPath, scopeId });
+      }
       continue;
     }
 
@@ -862,11 +944,60 @@ export function validateRuntimeConfigScopes(
     result.validated.push({ configPath, schemaPath, scopeId });
   }
 
-  validateRuntimeConfigSchemaTargets(result.validated, {
+  result.invalid = collectRuntimeConfigSchemaTargetValidationErrors(result.validated, {
     ...(options.formatError ? { formatError: options.formatError } : {}),
   });
 
   return result;
+}
+
+export function readRuntimeConfigSchemaRegistry(
+  targets: RuntimeConfigSchemaTargetInput[],
+  options: ReadRuntimeConfigSchemaRegistryOptions = {},
+): RuntimeConfigValidationSchemaRegistry {
+  const schemaFileName = options.schemaFileName ?? defaultRuntimeConfigSchemaFileName;
+  const entries = targets
+    .filter((target) => shouldRegisterRuntimeConfigValidationSchema(target.policy))
+    .flatMap((target) => {
+      const scopeId = target.scopeId.trim();
+      if (!scopeId || !target.cwd) return [];
+
+      const schemaPath = path.resolve(target.cwd, schemaFileName);
+      if (!existsSync(schemaPath)) return [];
+
+      return [[scopeId, readRequiredJsonFile<object>(schemaPath)] as const];
+    });
+
+  return Object.fromEntries(entries);
+}
+
+export function assertRequiredRuntimeConfigValidationTargets(
+  result: RuntimeConfigValidateResult,
+  targets: RuntimeConfigSchemaTargetInput[],
+): void {
+  const requiredScopeIds = new Set(
+    targets
+      .filter((target) => shouldRequireRuntimeConfigAtStartup(target.policy))
+      .map((target) => target.scopeId.trim())
+      .filter(Boolean),
+  );
+  const requiredFailures = [
+    ...result.skipped
+      .filter((entry) => requiredScopeIds.has(entry.scopeId))
+      .map(formatMissingRuntimeConfigValidationError),
+    ...result.invalid
+      .filter((entry) => requiredScopeIds.has(entry.scopeId))
+      .map((entry) => entry.error),
+  ];
+
+  if (requiredFailures.length) {
+    throw new Error(
+      [
+        'RuntimeConfig startup validation failed.',
+        ...requiredFailures.map((error) => error.message),
+      ].join('\n\n'),
+    );
+  }
 }
 
 export function validateRuntimeConfigSourceScopes(
@@ -878,6 +1009,7 @@ export function validateRuntimeConfigSourceScopes(
   const filesByScope = new Map<string, string>();
   const result: RuntimeConfigValidateResult = {
     fileName: source.paths[0] ?? '',
+    invalid: [],
     skipped: [],
     validated: [],
     varDir: '',
@@ -888,23 +1020,30 @@ export function validateRuntimeConfigSourceScopes(
   }
 
   for (const target of targets) {
+    if (!shouldRegisterRuntimeConfigValidationSchema(target.policy)) continue;
+
     const scopeId = target.scopeId.trim();
     if (!scopeId) continue;
 
+    const mode = resolveRuntimeConfigValidationMode(target.policy);
     const configPath = filesByScope.get(scopeId);
     const schemaPath = target.cwd ? path.resolve(target.cwd, schemaFileName) : undefined;
 
     if (!target.cwd || !schemaPath) {
-      result.skipped.push({
-        ...(configPath ? { configPath } : {}),
-        reason: 'missing-scope-dir',
-        scopeId,
-      });
+      if (shouldReportMissingRuntimeConfig(mode)) {
+        result.skipped.push({
+          ...(configPath ? { configPath } : {}),
+          reason: 'missing-scope-dir',
+          scopeId,
+        });
+      }
       continue;
     }
 
     if (!configPath) {
-      result.skipped.push({ reason: 'missing-config', schemaPath, scopeId });
+      if (shouldReportMissingRuntimeConfig(mode)) {
+        result.skipped.push({ reason: 'missing-config', schemaPath, scopeId });
+      }
       continue;
     }
 
@@ -916,7 +1055,7 @@ export function validateRuntimeConfigSourceScopes(
     result.validated.push({ configPath, schemaPath, scopeId });
   }
 
-  validateRuntimeConfigSchemaTargets(result.validated, {
+  result.invalid = collectRuntimeConfigSchemaTargetValidationErrors(result.validated, {
     ...(options.formatError ? { formatError: options.formatError } : {}),
   });
 

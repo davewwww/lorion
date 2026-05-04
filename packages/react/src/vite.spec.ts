@@ -94,6 +94,141 @@ describe('React capability Vite helpers', () => {
     expect(renderCapabilityModule(capabilities)).not.toContain('@react-workspace/data/capability');
   });
 
+  it('uses configured default selection when no explicit selection is provided', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'lorion-react-capability-loader-'));
+
+    writeCapability(workspaceRoot, 'default', '@react-workspace/default', {
+      dependencies: { web: '0.1.0' },
+    });
+    writeCapability(workspaceRoot, 'web', '@react-workspace/web');
+    writeCapability(workspaceRoot, 'admin', '@react-workspace/admin');
+
+    const capabilities = discoverSelectedCapabilities(workspaceRoot, {
+      defaultSelection: ['default'],
+    });
+
+    expect(capabilities.map((capability) => capability.id)).toEqual(['default', 'web']);
+  });
+
+  it('derives selected capabilities from default capability seed keys', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'lorion-react-capability-loader-'));
+
+    writeCapability(workspaceRoot, 'default', '@react-workspace/default');
+    writeCapability(workspaceRoot, 'settings', '@react-workspace/settings');
+
+    const capabilities = discoverSelectedCapabilities(workspaceRoot, {
+      defaultSelection: ['default'],
+      selectionSeed: {
+        argv: ['vite', '--capabilities=settings'],
+        env: {},
+      },
+    });
+
+    expect(capabilities.map((capability) => capability.id)).toEqual(['settings']);
+  });
+
+  it('uses explicit selected capabilities before seed values', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'lorion-react-capability-loader-'));
+
+    writeCapability(workspaceRoot, 'default', '@react-workspace/default');
+    writeCapability(workspaceRoot, 'settings', '@react-workspace/settings');
+
+    const capabilities = discoverSelectedCapabilities(workspaceRoot, {
+      selected: ['default'],
+      selectionSeed: {
+        argv: ['vite', '--capabilities=settings'],
+        env: {},
+      },
+    });
+
+    expect(capabilities.map((capability) => capability.id)).toEqual(['default']);
+  });
+
+  it('can disable seed lookup and fall back to default selection', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'lorion-react-capability-loader-'));
+
+    writeCapability(workspaceRoot, 'default', '@react-workspace/default');
+    writeCapability(workspaceRoot, 'settings', '@react-workspace/settings');
+
+    const capabilities = discoverSelectedCapabilities(workspaceRoot, {
+      defaultSelection: ['default'],
+      selectionSeed: false,
+    });
+
+    expect(capabilities.map((capability) => capability.id)).toEqual(['default']);
+  });
+
+  it('uses provider-owned defaults as composition relations', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'lorion-react-capability-loader-'));
+
+    writeCapability(workspaceRoot, 'auth', '@react-workspace/auth');
+    writeCapability(workspaceRoot, 'keycloak', '@react-workspace/keycloak', {
+      defaultFor: 'auth',
+      providesFor: 'auth',
+    });
+    writeCapability(workspaceRoot, 'admin', '@react-workspace/admin');
+
+    const capabilities = discoverSelectedCapabilities(workspaceRoot, {
+      selected: ['auth'],
+    });
+
+    expect(capabilities.map((capability) => capability.id)).toEqual(['auth', 'keycloak']);
+  });
+
+  it('uses explicitly selected provider capabilities before preferences and defaults', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'lorion-react-capability-loader-'));
+
+    writeCapability(workspaceRoot, 'auth', '@react-workspace/auth');
+    writeCapability(workspaceRoot, 'auth-local-jwt', '@react-workspace/auth-local-jwt', {
+      providesFor: 'auth',
+    });
+    writeCapability(workspaceRoot, 'keycloak', '@react-workspace/keycloak', {
+      defaultFor: 'auth',
+      providesFor: 'auth',
+    });
+    writeCapability(workspaceRoot, 'feature-prefers-keycloak', '@react-workspace/feature', {
+      providerPreferences: {
+        auth: 'keycloak',
+      },
+    });
+
+    const capabilities = discoverSelectedCapabilities(workspaceRoot, {
+      selected: ['auth', 'auth-local-jwt', 'feature-prefers-keycloak'],
+    });
+
+    expect(capabilities.map((capability) => capability.id)).toEqual([
+      'auth',
+      'auth-local-jwt',
+      'feature-prefers-keycloak',
+    ]);
+  });
+
+  it('excludes default provider capabilities when a provider seed is selected with a host capability', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'lorion-react-capability-loader-'));
+
+    writeCapability(workspaceRoot, 'web', '@react-workspace/web', {
+      dependencies: { auth: '0.1.0' },
+    });
+    writeCapability(workspaceRoot, 'auth', '@react-workspace/auth');
+    writeCapability(workspaceRoot, 'auth-local-jwt', '@react-workspace/auth-local-jwt', {
+      providesFor: 'auth',
+    });
+    writeCapability(workspaceRoot, 'keycloak', '@react-workspace/keycloak', {
+      defaultFor: 'auth',
+      providesFor: 'auth',
+    });
+
+    const capabilities = discoverSelectedCapabilities(workspaceRoot, {
+      selected: ['web', 'auth-local-jwt'],
+    });
+
+    expect(capabilities.map((capability) => capability.id)).toEqual([
+      'auth',
+      'auth-local-jwt',
+      'web',
+    ]);
+  });
+
   it('builds route config from selected capabilities only', () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), 'lorion-react-capability-loader-'));
     const hostRoutesDirectory = join(workspaceRoot, 'hosts', 'web', 'src', 'routes');
@@ -206,16 +341,22 @@ function writeCapability(
     | boolean
     | {
         dependencies?: Record<string, string>;
+        defaultFor?: string | string[];
         disabled?: boolean;
         exports?: Record<string, string>;
+        providerPreferences?: Record<string, string>;
+        providesFor?: string | string[];
       } = { './capability': './src/capability.ts' },
 ): void {
   const capabilityDir = join(workspaceRoot, 'capabilities', id);
   const optionObject =
     typeof exportsOrOptions === 'object' &&
     ('dependencies' in exportsOrOptions ||
+      'defaultFor' in exportsOrOptions ||
       'disabled' in exportsOrOptions ||
-      'exports' in exportsOrOptions)
+      'exports' in exportsOrOptions ||
+      'providerPreferences' in exportsOrOptions ||
+      'providesFor' in exportsOrOptions)
       ? exportsOrOptions
       : undefined;
   const disabled =
@@ -226,6 +367,9 @@ function writeCapability(
       ? exportsOrOptions
       : { './capability': './src/capability.ts' };
   const dependencies = optionObject?.dependencies;
+  const defaultFor = optionObject?.defaultFor;
+  const providerPreferences = optionObject?.providerPreferences;
+  const providesFor = optionObject?.providesFor;
 
   mkdirSync(capabilityDir, { recursive: true });
   writeFileSync(
@@ -235,6 +379,9 @@ function writeCapability(
       version: '0.1.0',
       disabled,
       ...(dependencies ? { dependencies } : {}),
+      ...(defaultFor ? { defaultFor } : {}),
+      ...(providerPreferences ? { providerPreferences } : {}),
+      ...(providesFor ? { providesFor } : {}),
     }),
   );
   writeFileSync(

@@ -15,6 +15,11 @@ React.
 - Core packages stay framework-free; runtime-specific behavior lives in Node packages or framework adapters.
 - Public APIs are small, explicit, and documented through checkable examples.
 - Workspace checks cover build output, linting, tests, type checks, examples, dry-run package contents, and published package shape.
+- Release-impacting package commits carry their Changeset in the same commit.
+
+## Release Workflow
+
+- [Changesets](./changesets.md)
 
 ## Package Documentation
 

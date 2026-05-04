@@ -19,5 +19,6 @@
     "vite.config.ts",
     "capabilities/**/*.ts",
     "capabilities/**/*.tsx"
-  ]
+  ],
+  "exclude": ["capabilities/**/src/routes/**/*.ts", "capabilities/**/src/routes/**/*.tsx"]
 }

@@ -4,8 +4,12 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   createNuxtProviderSelectionRuntimeConfig,
+  createNuxtSelectedProviderPreferences,
   createNuxtExtensionBootstrap,
+  createNuxtExtensionCatalog,
+  createNuxtExtensionEntryMap,
   createNuxtExtensionLayerPaths,
+  discoverNuxtExtensionEntries,
   resolveExtensionSelection,
 } from '../../src/extensions';
 
@@ -52,6 +56,85 @@ describe('Nuxt extension bootstrap', () => {
         defaultSelection: 'default',
       }),
     ).toEqual(['settings']);
+  });
+
+  it('derives selected extensions from the shared capability seed keys', () => {
+    const root = createTempRoot();
+
+    createExtension(root, 'default', {
+      id: 'default',
+      version: '1.0.0',
+    });
+    createExtension(root, 'settings', {
+      id: 'settings',
+      version: '1.0.0',
+    });
+
+    const bootstrap = createNuxtExtensionBootstrap({
+      rootDir: root,
+      options: {
+        selectionSeed: {
+          argv: ['nuxt', '--capabilities=settings'],
+          env: {},
+        },
+      },
+    });
+
+    expect(bootstrap.selectedExtensions).toEqual(['settings']);
+  });
+
+  it('derives selected extensions from an overridden singular seed key', () => {
+    const root = createTempRoot();
+
+    createExtension(root, 'default', {
+      id: 'default',
+      version: '1.0.0',
+    });
+    createExtension(root, 'shop', {
+      id: 'shop',
+      version: '1.0.0',
+    });
+
+    const bootstrap = createNuxtExtensionBootstrap({
+      rootDir: root,
+      options: {
+        selectionSeed: {
+          argv: [],
+          env: {
+            LORION_PROFILES: 'shop',
+          },
+          key: 'profile',
+        },
+      },
+    });
+
+    expect(bootstrap.selectedExtensions).toEqual(['shop']);
+  });
+
+  it('uses explicit selected extensions before seed values', () => {
+    const root = createTempRoot();
+
+    createExtension(root, 'default', {
+      id: 'default',
+      version: '1.0.0',
+    });
+    createExtension(root, 'settings', {
+      id: 'settings',
+      version: '1.0.0',
+    });
+
+    const bootstrap = createNuxtExtensionBootstrap({
+      rootDir: root,
+      options: {
+        selected: 'default',
+        selectionSeed: {
+          argv: ['nuxt', '--capabilities=settings'],
+          env: {},
+        },
+      },
+    });
+
+    expect(bootstrap.selectedExtensions).toEqual(['default']);
   });
 
   it('resolves default bundles but mounts only extensions with app or server folders', () => {
@@ -213,6 +296,89 @@ describe('Nuxt extension bootstrap', () => {
     );
   });
 
+  it('discovers reusable extension entries with descriptor locations and catalog helpers', () => {
+    const root = createTempRoot();
+
+    createExtension(root, 'web', {
+      id: 'web',
+      version: '1.0.0',
+      recommended: {
+        analytics: '^1.0.0',
+      },
+    });
+    createExtension(root, 'analytics', {
+      id: 'analytics',
+      version: '1.0.0',
+    });
+
+    const entries = discoverNuxtExtensionEntries({
+      projectRootDir: root,
+      options: {
+        relationDescriptors: [
+          {
+            id: 'recommended',
+          },
+        ],
+      },
+    });
+    const entryMap = createNuxtExtensionEntryMap(entries);
+    const catalog = createNuxtExtensionCatalog({
+      entries,
+      relationDescriptors: [
+        {
+          id: 'recommended',
+        },
+      ],
+    });
+
+    expect(entryMap.get('web')?.descriptor.location).toBe(join(root, 'extensions', 'web'));
+    expect(
+      catalog.getTransitiveTargets({
+        start: ['web'],
+        relationIds: ['recommended'],
+      }),
+    ).toEqual(['analytics', 'web']);
+  });
+
+  it('accepts runtime config validation policy metadata', () => {
+    const root = createTempRoot();
+
+    createExtension(root, 'keycloak', {
+      id: 'keycloak',
+      runtimeConfig: {
+        validation: 'onUse',
+      },
+      version: '1.0.0',
+    });
+
+    const bootstrap = createNuxtExtensionBootstrap({
+      rootDir: root,
+      options: {
+        selected: 'keycloak',
+      },
+    });
+
+    expect(bootstrap.resolvedExtensions[0]?.descriptor.runtimeConfig).toEqual({
+      validation: 'onUse',
+    });
+  });
+
+  it('rejects unknown runtime config validation policy metadata', () => {
+    const root = createTempRoot();
+
+    createExtension(root, 'keycloak', {
+      id: 'keycloak',
+      runtimeConfig: {
+        validation: 'sometimes',
+      },
+      version: '1.0.0',
+    });
+
+    expect(() => createNuxtExtensionBootstrap({ rootDir: root })).toThrow(
+      'Descriptor schema validation failed.',
+    );
+  });
+
   it('creates provider selection runtime config from resolved extension descriptors', () => {
     const root = createTempRoot();
 
@@ -266,17 +432,216 @@ describe('Nuxt extension bootstrap', () => {
     expect(createNuxtProviderSelectionRuntimeConfig(bootstrap.resolvedExtensions)).toEqual({
       public: {
         providerSelection: {
-          configuredProviders: {
+          configuredProviders: {},
+          excludedProviderIds: ['payment-provider-invoice'],
+          fallbackProviders: {
             payment: 'payment-provider-stripe',
           },
-          excludedProviderIds: ['payment-provider-invoice'],
           mismatches: [],
           selections: {
             payment: {
               capabilityId: 'payment',
               candidateProviderIds: ['payment-provider-invoice', 'payment-provider-stripe'],
-              mode: 'configured',
+              mode: 'fallback',
               selectedProviderId: 'payment-provider-stripe',
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('uses provider-owned defaults as fallbacks and composition relations', () => {
+    const root = createTempRoot();
+
+    createExtension(root, 'default', {
+      id: 'default',
+      version: '1.0.0',
+      dependencies: {
+        auth: '^1.0.0',
+        'auth-local-jwt': '^1.0.0',
+      },
+    });
+    createExtension(root, 'auth', {
+      id: 'auth',
+      version: '1.0.0',
+    });
+    createExtension(root, 'auth-local-jwt', {
+      id: 'auth-local-jwt',
+      providesFor: 'auth',
+      version: '1.0.0',
+    });
+    createExtension(root, 'keycloak', {
+      id: 'keycloak',
+      defaultFor: 'auth',
+      providesFor: 'auth',
+      version: '1.0.0',
+    });
+
+    const bootstrap = createNuxtExtensionBootstrap({ rootDir: root });
+
+    expect(bootstrap.resolvedExtensionIds).toContain('keycloak');
+    expect(createNuxtProviderSelectionRuntimeConfig(bootstrap.resolvedExtensions)).toEqual({
+      public: {
+        providerSelection: {
+          configuredProviders: {},
+          excludedProviderIds: ['auth-local-jwt'],
+          fallbackProviders: {
+            auth: 'keycloak',
+          },
+          mismatches: [],
+          selections: {
+            auth: {
+              capabilityId: 'auth',
+              candidateProviderIds: ['auth-local-jwt', 'keycloak'],
+              mode: 'fallback',
+              selectedProviderId: 'keycloak',
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('uses explicitly selected provider seeds before descriptor preferences and defaults', () => {
+    const root = createTempRoot();
+
+    createExtension(root, 'default', {
+      id: 'default',
+      version: '1.0.0',
+      dependencies: {
+        auth: '^1.0.0',
+      },
+    });
+    createExtension(root, 'auth', {
+      id: 'auth',
+      version: '1.0.0',
+    });
+    createExtension(
+      root,
+      'auth-local-jwt',
+      {
+        id: 'auth-local-jwt',
+        providesFor: 'auth',
+        version: '1.0.0',
+      },
+      ['app'],
+    );
+    createExtension(
+      root,
+      'keycloak',
+      {
+        id: 'keycloak',
+        defaultFor: 'auth',
+        providesFor: 'auth',
+        version: '1.0.0',
+      },
+      ['app'],
+    );
+    createExtension(root, 'feature-prefers-keycloak', {
+      id: 'feature-prefers-keycloak',
+      providerPreferences: {
+        auth: 'keycloak',
+      },
+      version: '1.0.0',
+    });
+
+    const bootstrap = createNuxtExtensionBootstrap({
+      rootDir: root,
+      options: {
+        baseExtensions: 'default',
+        selected: ['auth-local-jwt', 'feature-prefers-keycloak'],
+      },
+    });
+
+    expect(bootstrap.resolvedExtensionIds).toContain('auth-local-jwt');
+    expect(bootstrap.resolvedExtensionIds).toContain('feature-prefers-keycloak');
+    expect(bootstrap.resolvedExtensionIds).not.toContain('keycloak');
+    expect(
+      createNuxtProviderSelectionRuntimeConfig(bootstrap.resolvedExtensions, {
+        selectedProviders: {
+          auth: 'auth-local-jwt',
+        },
+      }),
+    ).toMatchObject({
+      public: {
+        providerSelection: {
+          excludedProviderIds: [],
+          selections: {
+            auth: {
+              mode: 'selected',
+              selectedProviderId: 'auth-local-jwt',
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('excludes default providers when a provider seed is selected with a host extension', () => {
+    const root = createTempRoot();
+
+    createExtension(root, 'web', {
+      id: 'web',
+      version: '1.0.0',
+      dependencies: {
+        auth: '^1.0.0',
+      },
+    });
+    createExtension(root, 'auth', {
+      id: 'auth',
+      version: '1.0.0',
+    });
+    createExtension(
+      root,
+      'auth-local-jwt',
+      {
+        id: 'auth-local-jwt',
+        providesFor: 'auth',
+        version: '1.0.0',
+      },
+      ['app'],
+    );
+    createExtension(
+      root,
+      'keycloak',
+      {
+        id: 'keycloak',
+        defaultFor: 'auth',
+        providesFor: 'auth',
+        version: '1.0.0',
+      },
+      ['app'],
+    );
+
+    const bootstrap = createNuxtExtensionBootstrap({
+      rootDir: root,
+      options: {
+        selected: ['web', 'auth-local-jwt'],
+      },
+    });
+    const selectedProviders = createNuxtSelectedProviderPreferences({
+      entries: bootstrap.resolvedExtensions,
+      selectedExtensions: bootstrap.selectedExtensions,
+    });
+
+    expect(bootstrap.resolvedExtensionIds).toEqual(['auth', 'auth-local-jwt', 'web']);
+    expect(selectedProviders).toEqual({
+      auth: 'auth-local-jwt',
+    });
+    expect(
+      createNuxtProviderSelectionRuntimeConfig(bootstrap.resolvedExtensions, {
+        selectedProviders,
+      }),
+    ).toMatchObject({
+      public: {
+        providerSelection: {
+          excludedProviderIds: [],
+          selections: {
+            auth: {
+              candidateProviderIds: ['auth-local-jwt'],
+              mode: 'selected',
+              selectedProviderId: 'auth-local-jwt',
             },
           },
         },

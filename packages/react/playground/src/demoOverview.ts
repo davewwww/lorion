@@ -1,7 +1,6 @@
 import type { CapabilityRuntime } from '@lorion-org/react';
+import { selectedCapabilityIds } from 'virtual:capabilities';
 import { getPaymentSelectionOverview } from '../capabilities/payments/src';
-
-export const selectedCapabilityIds = ['default'];
 
 export const discoveredCapabilityIds = [
   'admin',

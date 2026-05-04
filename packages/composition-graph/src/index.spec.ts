@@ -11,6 +11,7 @@ import {
   getDependents,
   getTransitiveTargets,
   parseDescriptorIds,
+  resolveDescriptorSelectionSeed,
   type Descriptor,
   type RelationDescriptor,
 } from './index';
@@ -49,6 +50,88 @@ describe('parseDescriptorIds', () => {
   it('parses arrays and strings into deterministic unique ids', () => {
     expect(parseDescriptorIds(['billing', 'billing', 'storage'])).toEqual(['billing', 'storage']);
     expect(parseDescriptorIds('billing  storage,billing')).toEqual(['billing', 'storage']);
+    expect(parseDescriptorIds(['billing storage', 'storage,queue'])).toEqual([
+      'billing',
+      'queue',
+      'storage',
+    ]);
+    expect(parseDescriptorIds(42)).toEqual([]);
+  });
+});
+
+describe('resolveDescriptorSelectionSeed', () => {
+  it('reads descriptor ids from configured cli and env seed keys', () => {
+    expect(
+      resolveDescriptorSelectionSeed({
+        argv: ['dev', '--profiles=billing storage'],
+        cliKeys: ['--profiles'],
+        env: {
+          PROFILES: 'ignored',
+        },
+        envKeys: ['PROFILES'],
+      }),
+    ).toEqual(['billing', 'storage']);
+
+    expect(
+      resolveDescriptorSelectionSeed({
+        argv: ['dev'],
+        cliKeys: ['--profiles'],
+        env: {
+          PROFILES: 'analytics,billing',
+        },
+        envKeys: ['PROFILES'],
+      }),
+    ).toEqual(['analytics', 'billing']);
+  });
+
+  it('falls back to the configured default value', () => {
+    expect(
+      resolveDescriptorSelectionSeed({
+        defaultValue: 'default-shell',
+      }),
+    ).toEqual(['default-shell']);
+  });
+
+  it('ignores valueless cli flags instead of reading the next flag as an id', () => {
+    expect(
+      resolveDescriptorSelectionSeed({
+        argv: ['dev', '--profiles', '--port', '3000'],
+        cliKeys: ['--profiles'],
+        defaultValue: 'default-shell',
+      }),
+    ).toEqual(['default-shell']);
+  });
+
+  it('derives cli and env seed keys from a neutral singular key', () => {
+    expect(
+      resolveDescriptorSelectionSeed({
+        argv: ['dev', '--capabilities=billing storage'],
+        env: {},
+        key: 'capability',
+      }),
+    ).toEqual(['billing', 'storage']);
+
+    expect(
+      resolveDescriptorSelectionSeed({
+        argv: [],
+        env: {
+          LORION_PROFILES: 'admin',
+        },
+        key: 'profile',
+      }),
+    ).toEqual(['admin']);
+  });
+
+  it('normalizes camelCase and npm config key names when deriving selection keys', () => {
+    expect(
+      resolveDescriptorSelectionSeed({
+        argv: [],
+        env: {
+          npm_config_runtime_extensions: 'admin',
+        },
+        key: 'runtimeExtension',
+      }),
+    ).toEqual(['admin']);
   });
 });
 
@@ -152,6 +235,69 @@ describe('buildDescriptorGraph', () => {
         source: 'descriptor',
       },
     ]);
+  });
+
+  it('can read relation targets from map values', () => {
+    const descriptorMap = buildDescriptorMap([
+      createDescriptor('auth', {
+        providerPreferences: {
+          auth: 'keycloak',
+        },
+      }),
+      createDescriptor('keycloak'),
+    ]);
+
+    const graph = buildDescriptorGraph({
+      descriptorMap,
+      relationDescriptors: [
+        ...defaultRelationDescriptors,
+        createRelationDescriptor({
+          id: 'providerPreferences',
+          targetMode: 'values',
+        }),
+      ],
+    });
+
+    expect(graph.edges).toContainEqual({
+      from: 'auth',
+      to: 'keycloak',
+      relation: 'providerPreferences',
+      source: 'descriptor',
+    });
+  });
+
+  it('can build inverse relations from string fields', () => {
+    const descriptorMap = buildDescriptorMap([
+      createDescriptor('auth'),
+      createDescriptor('keycloak', {
+        defaultFor: 'auth',
+      }),
+    ]);
+
+    const graph = buildDescriptorGraph({
+      descriptorMap,
+      relationDescriptors: [
+        createRelationDescriptor({
+          direction: 'incoming',
+          field: 'defaultFor',
+          id: 'defaultProviders',
+        }),
+      ],
+    });
+
+    expect(graph.edges).toContainEqual({
+      from: 'auth',
+      to: 'keycloak',
+      relation: 'defaultProviders',
+      source: 'descriptor',
+    });
+    expect(
+      getTransitiveTargets({
+        graph,
+        start: ['auth'],
+        relationIds: ['defaultProviders'],
+      }),
+    ).toEqual(['auth', 'keycloak']);
   });
 });
 

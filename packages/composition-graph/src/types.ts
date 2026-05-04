@@ -9,7 +9,8 @@ export type RelationId = string;
 export type Descriptor = {
   id: DescriptorId;
   version: string;
-  providesFor?: string;
+  providesFor?: DescriptorId | DescriptorId[];
+  defaultFor?: DescriptorId | DescriptorId[];
   capabilities?: string[];
   dependencies?: VersionConstraintMap;
   disabled?: boolean;
@@ -20,8 +21,10 @@ export type Descriptor = {
 export type DescriptorMap = Map<DescriptorId, Descriptor>;
 
 export type RelationDescriptor = {
+  direction?: 'outgoing' | 'incoming';
   id: RelationId;
   field?: string;
+  targetMode?: 'keys' | 'values';
 };
 
 export type DescriptorEdge = {
@@ -61,7 +64,7 @@ export type DescriptorProfile = {
   id: DescriptorId;
   location?: string;
   disabled: boolean;
-  providesFor?: string;
+  providesFor?: DescriptorId | DescriptorId[];
   capabilities: string[];
   outgoing: Record<RelationId, string[]>;
   incoming: Record<RelationId, string[]>;
