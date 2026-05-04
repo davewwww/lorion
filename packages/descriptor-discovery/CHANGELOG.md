@@ -1,5 +1,18 @@
 # @lorion-org/descriptor-discovery
 
+## 1.0.0-beta.2
+
+### Minor Changes
+
+- ac3c152: Prefer explicitly selected provider descriptors over descriptor-level provider preferences and defaults, and expose a Lorion source export condition for workspace playground development.
+
+### Patch Changes
+
+- Updated dependencies [ac3c152]
+- Updated dependencies [ac3c152]
+- Updated dependencies [ac3c152]
+  - @lorion-org/composition-graph@1.0.0-beta.2
+
 ## 1.0.0
 
 ### Minor Changes

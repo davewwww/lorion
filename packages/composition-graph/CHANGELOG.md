@@ -1,5 +1,13 @@
 # @lorion-org/composition-graph
 
+## 1.0.0-beta.2
+
+### Minor Changes
+
+- ac3c152: Add descriptor selection seed normalization for CLI, environment, and default host inputs.
+- ac3c152: Prefer explicitly selected provider descriptors over descriptor-level provider preferences and defaults, and expose a Lorion source export condition for workspace playground development.
+- ac3c152: Add shared capability selection seed defaults for framework adapters.
+
 ## 1.0.0
 
 ### Minor Changes
