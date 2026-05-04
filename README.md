@@ -2,6 +2,8 @@
 
 LORION is the **Layer Orchestration Runtime for Node.js**.
 
+![LORION hero](./docs/assets/lorion-hero.png)
+
 It is a small TypeScript package ecosystem for applications that are assembled
 from selectable layers instead of one fixed module list. LORION resolves
 descriptor-defined profiles, composes runtime configuration, selects capability
