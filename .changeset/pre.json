@@ -11,5 +11,13 @@
     "@lorion-org/runtime-config": "1.0.0-beta.0",
     "@lorion-org/runtime-config-node": "1.0.0-beta.0"
   },
-  "changesets": []
+  "changesets": [
+    "descriptor-selection-seeds",
+    "explicit-provider-seeds",
+    "friendly-clouds-share",
+    "nuxt-runtime-safe-extensions",
+    "react-provider-relations",
+    "runtime-config-explicit-imports",
+    "shared-capability-selection-seeds"
+  ]
 }

@@ -1,5 +1,11 @@
 # @lorion-org/provider-selection
 
+## 1.0.0-beta.2
+
+### Minor Changes
+
+- ac3c152: Prefer explicitly selected provider descriptors over descriptor-level provider preferences and defaults, and expose a Lorion source export condition for workspace playground development.
+
 ## 1.0.0
 
 ### Minor Changes
