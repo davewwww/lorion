@@ -36,10 +36,8 @@ Documentation-only and tooling-only changes usually do not need a Changeset.
 
 The workflow currently runs in Changesets pre mode, so `pnpm release` publishes
 the prerelease package versions using the `beta` tag from `.changeset/pre.json`.
-Published packages are not promoted to npm's default `latest` dist-tag yet.
-The workflow also runs `pnpm release:tag-beta` after publishing so npm's `beta`
-dist-tag follows the package versions and accidental `latest` tags on beta
-versions are removed.
+The workflow also sets `NPM_CONFIG_TAG=beta` so npm publishes prerelease
+versions with the `beta` dist-tag instead of `latest`.
 
 Changesets pre mode is active for the `beta` tag in `.changeset/pre.json`.
 While it is active, `pnpm version-packages` creates prerelease package versions
@@ -76,7 +74,6 @@ pnpm release:status
 pnpm version-packages
 pnpm check
 pnpm release
-pnpm release:tag-beta
 ```
 
 Run `pnpm version-packages` and `pnpm release` locally only for inspection or

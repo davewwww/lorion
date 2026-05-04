@@ -31,7 +31,6 @@
     "publish:check": "pnpm package:check",
     "changeset": "changeset",
     "release:status": "changeset status --verbose",
-    "release:tag-beta": "node tools/sync-beta-dist-tags.mjs",
     "version-packages": "changeset version",
     "release": "changeset publish",
     "release:beta": "changeset publish --tag beta"
