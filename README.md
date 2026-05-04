@@ -164,6 +164,7 @@ the published package shape with `publint`.
 ## Documentation
 
 - [Docs index](./docs/index.md)
+- [Release workflow](./docs/release.md)
 - [Contributing](./CONTRIBUTING.md)
 - [Security policy](./SECURITY.md)
 - [Code of conduct](./CODE_OF_CONDUCT.md)

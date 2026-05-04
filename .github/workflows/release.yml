@@ -1,7 +1,14 @@
 name: Release
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -23,7 +30,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22.17
+          node-version: 24
           cache: pnpm
           cache-dependency-path: |
             pnpm-lock.yaml
@@ -38,11 +45,6 @@ jobs:
       - name: Run quality gate
         run: pnpm check
 
-      - name: Verify npm token owner
-        run: npm whoami --registry=https://registry.npmjs.org
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       - name: Create release PR or publish
         uses: changesets/action@v1
         with:
@@ -50,5 +52,4 @@ jobs:
           publish: pnpm release:beta
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true

@@ -1,0 +1,15 @@
+{
+  "mode": "pre",
+  "tag": "beta",
+  "initialVersions": {
+    "@lorion-org/composition-graph": "1.0.0-beta.1",
+    "@lorion-org/descriptor-discovery": "1.0.0-beta.1",
+    "@lorion-org/nuxt": "1.0.0-beta.1",
+    "@lorion-org/provider-selection": "1.0.0-beta.1",
+    "@lorion-org/react": "1.0.0-beta.1",
+    "@lorion-org/registry-hub": "1.0.0-beta.1",
+    "@lorion-org/runtime-config": "1.0.0-beta.0",
+    "@lorion-org/runtime-config-node": "1.0.0-beta.0"
+  },
+  "changesets": []
+}

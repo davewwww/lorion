@@ -20,6 +20,7 @@ React.
 ## Release Workflow
 
 - [Changesets](./changesets.md)
+- [Release workflow](./release.md)
 
 ## Package Documentation
 

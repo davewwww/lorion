@@ -30,6 +30,7 @@
     "package:check": "turbo run package:check",
     "publish:check": "pnpm package:check",
     "changeset": "changeset",
+    "release:status": "changeset status --verbose",
     "version-packages": "changeset version",
     "release": "changeset publish",
     "release:beta": "changeset publish --tag beta"

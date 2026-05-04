@@ -39,3 +39,5 @@ Run commands from the LORION repository root:
 - package versions are managed with Changesets
 - npm publishing is done from GitHub Actions
 - all publishable packages must define `exports`, `types`, and `files`
+- release-impacting package changes must include their Changeset in the same commit
+- see [the release workflow](./docs/release.md) for the maintainer flow
