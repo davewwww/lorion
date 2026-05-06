@@ -22,6 +22,7 @@ capability discovery and TanStack-compatible virtual route config.
 - a small React binding for immutable capability contributions
 - a Vite virtual module helper for active capability activation exports
 - a TanStack virtual route config helper for capability-owned route folders
+- scoped public runtime config for active capabilities
 - a React adapter over LORION descriptor discovery and composition graph packages
 
 ## What It Is Not
@@ -154,6 +155,99 @@ The virtual module exports `capabilityModules`, `selectedCapabilityIds`, and
 `resolvedCapabilityIds` so host code can distinguish the seed from the final
 graph resolution.
 
+## Runtime Config
+
+React runtime config follows the same LORION ownership model as other
+capability data: a capability owns its config contract, deployment inputs provide
+values, and the framework adapter exposes only the safe runtime view.
+
+By default the React Vite adapter looks for:
+
+```text
+capabilities/<capability>/capability.schema.json
+.data/runtime-config/<capability>/capability.runtime.json
+```
+
+Hosts can configure the convention once:
+
+```ts
+const lorion = lorionReact({
+  workspaceRoot,
+  routesDirectory,
+  runtimeConfig: {
+    configFileName: 'capability.runtime.json',
+    schemaFileName: 'capability.schema.json',
+  },
+});
+```
+
+By default, file-backed config is read from `<workspaceRoot>/.data`. Hosts that
+need a deployment-controlled var dir can configure an env key:
+
+```ts
+const lorion = lorionReact({
+  workspaceRoot,
+  routesDirectory,
+  runtimeConfig: {
+    varDir: {
+      envKey: 'REACT_VAR_DIR',
+    },
+  },
+});
+```
+
+Runtime files use unprefixed capability-local sections:
+
+```json
+{
+  "public": {
+    "url": "https://id.example.test",
+    "realm": "demo",
+    "clientId": "web"
+  },
+  "private": {
+    "clientSecret": "server-only"
+  }
+}
+```
+
+The adapter also reads Vite env files and process env. Public keys use the
+`VITE_<CAPABILITY>_<KEY>` convention, while private keys use
+`<CAPABILITY>_<KEY>`:
+
+```text
+VITE_KEYCLOAK_URL=https://id.example.test
+VITE_KEYCLOAK_REALM=demo
+VITE_KEYCLOAK_CLIENT_ID=web
+KEYCLOAK_CLIENT_SECRET=server-only
+```
+
+Env values override runtime files. Only `public` config is emitted through
+`virtual:capability-runtime-config`; server code can opt into
+`virtual:capability-runtime-config/server`. The server virtual module is
+SSR-only and fails during client builds to prevent private config from being
+bundled.
+
+Render the config provider near the capability runtime provider:
+
+```tsx
+import { CapabilityRuntimeConfigProvider } from '@lorion-org/react';
+import { capabilityRuntimeConfig } from 'virtual:capability-runtime-config';
+
+<CapabilityRuntimeConfigProvider runtimeConfig={capabilityRuntimeConfig}>
+  <App />
+</CapabilityRuntimeConfigProvider>;
+```
+
+Capability code reads scoped public config:
+
+```ts
+import { useCapabilityRuntimeConfig } from '@lorion-org/react';
+
+const keycloak = useCapabilityRuntimeConfig('keycloak');
+console.log(keycloak.public.url);
+```
+
 ## Provider Selection
 
 Capabilities that implement another capability can declare `providesFor`.
@@ -214,8 +308,8 @@ leaves Stripe out of the resolved capabilities.
 
 The package exposes two public entry points:
 
-- `@lorion-org/react` for runtime, contribution contracts, provider selection, and React context helpers
-- `@lorion-org/react/vite` for capability discovery, the Vite virtual module, and TanStack-compatible route config
+- `@lorion-org/react` for runtime, contribution contracts, provider selection, runtime config, and React context helpers
+- `@lorion-org/react/vite` for capability discovery, runtime-config virtual modules, and TanStack-compatible route config
 
 ## Playground
 

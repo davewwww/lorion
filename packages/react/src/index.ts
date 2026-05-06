@@ -12,6 +12,7 @@ import {
   type ProviderPreferenceMap,
   type ProviderSelectionResolution,
 } from '@lorion-org/provider-selection';
+import type { RuntimeConfigValidationPolicy } from '@lorion-org/runtime-config';
 import { defaultCapabilityRelationDescriptors } from './relations';
 
 export {
@@ -19,11 +20,13 @@ export {
   defaultCapabilityRelationDescriptors,
   defaultCapabilityResolutionRelations,
 } from './relations';
+export * from './runtime-config';
 
 export type CapabilityManifest = Descriptor & {
   defaultFor?: string | string[];
   description?: string;
   providerPreferences?: ProviderPreferenceMap;
+  runtimeConfig?: RuntimeConfigValidationPolicy;
 };
 
 export type ExtensionPoint<T> = {

@@ -110,6 +110,12 @@ importers:
       '@lorion-org/provider-selection':
         specifier: workspace:^
         version: link:../provider-selection
+      '@lorion-org/runtime-config':
+        specifier: workspace:^
+        version: link:../runtime-config
+      '@lorion-org/runtime-config-node':
+        specifier: workspace:^
+        version: link:../runtime-config-node
       react:
         specifier: ^19.0.0
         version: 19.2.5

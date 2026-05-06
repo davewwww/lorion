@@ -6,6 +6,8 @@ import {
   defineContribution,
   defineExtensionPoint,
   getCapabilityProviderSelection,
+  getCapabilityRuntimeConfig,
+  getCapabilityRuntimeConfigScope,
 } from './index';
 
 const MenuExtension = defineExtensionPoint<{ id: string }>('test.menu');
@@ -149,5 +151,24 @@ describe('createCapabilityRuntime', () => {
       },
     });
     expect(selection.excludedProviderIds).toEqual(['provider-b']);
+  });
+
+  it('reads scoped public runtime config without exposing private values', () => {
+    const runtimeConfig = {
+      public: {
+        keycloak: {
+          clientId: 'web',
+          realm: 'demo',
+        },
+      },
+    };
+
+    expect(getCapabilityRuntimeConfig(runtimeConfig, 'keycloak')).toEqual({
+      public: {
+        clientId: 'web',
+        realm: 'demo',
+      },
+    });
+    expect(getCapabilityRuntimeConfigScope(runtimeConfig, 'missing')).toEqual({});
   });
 });

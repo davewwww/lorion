@@ -4,11 +4,14 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  capabilityLoader,
   createCapabilityRouteConfig,
+  createReactRuntimeConfig,
   discoverCapabilities,
   discoverSelectedCapabilities,
   lorionReact,
   renderCapabilityModule,
+  renderRuntimeConfigModule,
 } from './vite';
 
 describe('React capability Vite helpers', () => {
@@ -307,6 +310,209 @@ describe('React capability Vite helpers', () => {
     });
   });
 
+  it('loads runtime config for selected capabilities from files and env', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'lorion-react-runtime-config-'));
+
+    writeCapability(workspaceRoot, 'keycloak', '@react-workspace/keycloak', {
+      runtimeConfig: { validation: 'startup' },
+    });
+    writeCapability(workspaceRoot, 'data', '@react-workspace/data');
+    writeRuntimeConfigSchema(workspaceRoot, 'keycloak', {
+      public: ['url', 'clientId'],
+      private: ['clientSecret'],
+    });
+    writeRuntimeConfigFile(join(workspaceRoot, '.data'), 'keycloak', {
+      public: {
+        url: 'https://file.example',
+      },
+      private: {
+        clientSecret: 'file-secret',
+      },
+    });
+
+    const capabilities = discoverSelectedCapabilities(workspaceRoot, {
+      selected: ['keycloak'],
+    });
+    const runtimeConfig = createReactRuntimeConfig(
+      capabilities,
+      workspaceRoot,
+      {
+        env: {
+          env: {
+            KEYCLOAK_CLIENT_SECRET: 'env-secret',
+            VITE_KEYCLOAK_CLIENT_ID: 'web',
+          },
+        },
+      },
+      { root: workspaceRoot },
+    );
+
+    expect(runtimeConfig).toEqual({
+      public: {
+        keycloak: {
+          clientId: 'web',
+          url: 'https://file.example',
+        },
+      },
+      private: {
+        keycloak: {
+          clientSecret: 'env-secret',
+        },
+      },
+    });
+  });
+
+  it('loads runtime config from a configured var dir env key', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'lorion-react-runtime-config-'));
+    const varDir = mkdtempSync(join(tmpdir(), 'lorion-react-var-dir-'));
+
+    writeCapability(workspaceRoot, 'keycloak', '@react-workspace/keycloak');
+    writeRuntimeConfigSchema(workspaceRoot, 'keycloak', {
+      public: ['url'],
+    });
+    writeRuntimeConfigFile(varDir, 'keycloak', {
+      public: {
+        url: 'https://var-dir.example',
+      },
+    });
+
+    const capabilities = discoverSelectedCapabilities(workspaceRoot, {
+      selected: ['keycloak'],
+    });
+    const runtimeConfig = createReactRuntimeConfig(
+      capabilities,
+      workspaceRoot,
+      {
+        env: {
+          env: {
+            REACT_VAR_DIR: varDir,
+          },
+        },
+        varDir: {
+          envKey: 'REACT_VAR_DIR',
+        },
+      },
+      { root: workspaceRoot },
+    );
+
+    expect(runtimeConfig.public.keycloak).toEqual({
+      url: 'https://var-dir.example',
+    });
+  });
+
+  it('does not expose private runtime config in the public virtual module', () => {
+    const source = renderRuntimeConfigModule({
+      public: {
+        keycloak: {
+          url: 'https://example.test',
+        },
+      },
+      private: {
+        keycloak: {
+          clientSecret: 'secret',
+        },
+      },
+    });
+
+    expect(source).toContain('https://example.test');
+    expect(source).not.toContain('secret');
+    expect(source).not.toContain('private');
+  });
+
+  it('rejects the private runtime config virtual module in client builds', () => {
+    const plugin = capabilityLoader();
+    const resolvedId = plugin.resolveId('virtual:capability-runtime-config/server');
+
+    expect(resolvedId).toBe('\0virtual:capability-runtime-config/server');
+    expect(() => plugin.load(resolvedId!, { ssr: false })).toThrow(
+      'virtual:capability-runtime-config/server may only be imported from SSR/server code.',
+    );
+    expect(plugin.load(resolvedId!, { ssr: true })).toContain(
+      'capabilityServerRuntimeConfig',
+    );
+  });
+
+  it('validates startup runtime config against capability schemas', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'lorion-react-runtime-config-'));
+
+    writeCapability(workspaceRoot, 'keycloak', '@react-workspace/keycloak', {
+      runtimeConfig: { validation: 'startup' },
+    });
+    writeRuntimeConfigSchema(workspaceRoot, 'keycloak', {
+      public: ['url'],
+    });
+
+    const capabilities = discoverSelectedCapabilities(workspaceRoot, {
+      selected: ['keycloak'],
+    });
+
+    expect(() =>
+      createReactRuntimeConfig(
+        capabilities,
+        workspaceRoot,
+        {
+          env: { env: {} },
+        },
+        { root: workspaceRoot },
+      ),
+    ).toThrow('RuntimeConfig schema validation failed');
+  });
+
+  it('fails fast when a runtime config schema file is malformed', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'lorion-react-runtime-config-'));
+
+    writeCapability(workspaceRoot, 'keycloak', '@react-workspace/keycloak', {
+      runtimeConfig: { validation: 'startup' },
+    });
+    writeFileSync(
+      join(workspaceRoot, 'capabilities', 'keycloak', 'capability.schema.json'),
+      '{ malformed json',
+    );
+
+    const capabilities = discoverSelectedCapabilities(workspaceRoot, {
+      selected: ['keycloak'],
+    });
+
+    expect(() =>
+      createReactRuntimeConfig(
+        capabilities,
+        workspaceRoot,
+        {
+          env: { env: {} },
+        },
+        { root: workspaceRoot },
+      ),
+    ).toThrow(/RuntimeConfig schema JSON parse error.*capability\.schema\.json/);
+  });
+
+  it('ignores runtime config for inactive capabilities', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'lorion-react-runtime-config-'));
+
+    writeCapability(workspaceRoot, 'keycloak', '@react-workspace/keycloak');
+    writeCapability(workspaceRoot, 'data', '@react-workspace/data');
+    writeRuntimeConfigSchema(workspaceRoot, 'data', {
+      public: ['url'],
+    });
+
+    const capabilities = discoverSelectedCapabilities(workspaceRoot, {
+      selected: ['keycloak'],
+    });
+    const runtimeConfig = createReactRuntimeConfig(
+      capabilities,
+      workspaceRoot,
+      {
+        env: {
+          env: {
+            VITE_DATA_URL: 'https://data.example',
+          },
+        },
+      },
+      { root: workspaceRoot },
+    );
+
+    expect(runtimeConfig.public).toEqual({});
+  });
+
   it('fails when a capability has no package manifest', () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), 'lorion-react-capability-loader-'));
     const capabilityDir = join(workspaceRoot, 'capabilities', 'broken');
@@ -346,6 +552,7 @@ function writeCapability(
         exports?: Record<string, string>;
         providerPreferences?: Record<string, string>;
         providesFor?: string | string[];
+        runtimeConfig?: Record<string, unknown>;
       } = { './capability': './src/capability.ts' },
 ): void {
   const capabilityDir = join(workspaceRoot, 'capabilities', id);
@@ -356,7 +563,8 @@ function writeCapability(
       'disabled' in exportsOrOptions ||
       'exports' in exportsOrOptions ||
       'providerPreferences' in exportsOrOptions ||
-      'providesFor' in exportsOrOptions)
+      'providesFor' in exportsOrOptions ||
+      'runtimeConfig' in exportsOrOptions)
       ? exportsOrOptions
       : undefined;
   const disabled =
@@ -370,6 +578,7 @@ function writeCapability(
   const defaultFor = optionObject?.defaultFor;
   const providerPreferences = optionObject?.providerPreferences;
   const providesFor = optionObject?.providesFor;
+  const runtimeConfig = optionObject?.runtimeConfig;
 
   mkdirSync(capabilityDir, { recursive: true });
   writeFileSync(
@@ -382,10 +591,55 @@ function writeCapability(
       ...(defaultFor ? { defaultFor } : {}),
       ...(providerPreferences ? { providerPreferences } : {}),
       ...(providesFor ? { providesFor } : {}),
+      ...(runtimeConfig ? { runtimeConfig } : {}),
     }),
   );
   writeFileSync(
     join(capabilityDir, 'package.json'),
     JSON.stringify({ name: packageName, exports }),
   );
+}
+
+function writeRuntimeConfigSchema(
+  workspaceRoot: string,
+  capabilityId: string,
+  sections: {
+    private?: string[];
+    public?: string[];
+  },
+): void {
+  const properties = Object.fromEntries(
+    (['public', 'private'] as const)
+      .filter((section) => sections[section]?.length)
+      .map((section) => [
+        section,
+        {
+          type: 'object',
+          properties: Object.fromEntries(
+            sections[section]!.map((key) => [key, { type: 'string' }]),
+          ),
+          required: sections[section],
+        },
+      ]),
+  );
+
+  writeFileSync(
+    join(workspaceRoot, 'capabilities', capabilityId, 'capability.schema.json'),
+    JSON.stringify({
+      type: 'object',
+      properties,
+      required: Object.keys(properties),
+    }),
+  );
+}
+
+function writeRuntimeConfigFile(
+  varDir: string,
+  capabilityId: string,
+  config: Record<string, unknown>,
+): void {
+  const configDir = join(varDir, 'runtime-config', capabilityId);
+
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(join(configDir, 'capability.runtime.json'), JSON.stringify(config));
 }

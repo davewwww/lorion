@@ -71,10 +71,18 @@
   "dependencies": {
     "@lorion-org/composition-graph": "workspace:^",
     "@lorion-org/descriptor-discovery": "workspace:^",
-    "@lorion-org/provider-selection": "workspace:^"
+    "@lorion-org/provider-selection": "workspace:^",
+    "@lorion-org/runtime-config": "workspace:^",
+    "@lorion-org/runtime-config-node": "workspace:^"
   },
   "peerDependencies": {
-    "react": "^19.0.0"
+    "react": "^19.0.0",
+    "vite": "^7.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@tanstack/react-router": "^1.168.25",

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import process from 'node:process';
+import { loadEnv } from 'vite';
 import {
   createCompositionSelection,
   createDescriptorCatalog,
@@ -22,12 +23,36 @@ import {
   type ProviderPreferenceMap,
 } from '@lorion-org/provider-selection';
 import {
+  createRuntimeConfigValidatorRegistry,
+  projectRuntimeConfigNamespaces,
+  resolveRuntimeConfigValidationMode,
+  toRuntimeConfigFragment,
+  toSnakeUpperCase,
+  type RuntimeConfigFragment,
+  type RuntimeConfigFragmentMap,
+  type RuntimeConfigSection,
+  type RuntimeConfigValidationPolicyInput,
+} from '@lorion-org/runtime-config';
+import {
+  loadRuntimeConfigSourceTree,
+  readJsonFile,
+  resolveRuntimeConfigSource as resolveRuntimeConfigVarDirSource,
+  type RuntimeConfigPathPatternSource,
+  type RuntimeConfigSchemaValidationErrorFormatter,
+} from '@lorion-org/runtime-config-node';
+import {
   createCapabilityCompositionPolicy,
   defaultCapabilityRelationDescriptors,
 } from './relations';
 
 const virtualModuleId = 'virtual:capabilities';
 const resolvedVirtualModuleId = `\0${virtualModuleId}`;
+const runtimeConfigModuleId = 'virtual:capability-runtime-config';
+const resolvedRuntimeConfigModuleId = `\0${runtimeConfigModuleId}`;
+const serverRuntimeConfigModuleId = 'virtual:capability-runtime-config/server';
+const resolvedServerRuntimeConfigModuleId = `\0${serverRuntimeConfigModuleId}`;
+const defaultRuntimeConfigFileName = 'capability.runtime.json';
+const defaultRuntimeConfigSchemaFileName = 'capability.schema.json';
 
 export type CapabilityLoaderOptions = {
   capabilitiesDir?: string;
@@ -35,12 +60,47 @@ export type CapabilityLoaderOptions = {
   defaultSelection?: readonly DescriptorId[];
   policy?: Partial<CompositionPolicy>;
   relationDescriptors?: readonly RelationDescriptor[];
+  runtimeConfig?: false | ReactRuntimeConfigOptions;
   selected?: readonly DescriptorId[];
   selectionSeed?: false | CapabilitySelectionSeedOptions;
   workspaceRoot?: string;
 };
 
 export type CapabilitySelectionSeedOptions = Omit<DescriptorSelectionSeedInput, 'defaultValue'>;
+
+export type ReactRuntimeConfigEnvOptions = {
+  env?: Record<string, string | undefined>;
+  privatePrefix?: string;
+  publicPrefix?: string;
+};
+
+export type ReactRuntimeConfigValidationOptions = {
+  formatError?: RuntimeConfigSchemaValidationErrorFormatter;
+  policy?: RuntimeConfigValidationPolicyInput;
+  schemaFileName?: string;
+};
+
+export type ReactRuntimeConfigVarDirOptions = {
+  defaultValue?: string;
+  env?: Record<string, string | undefined>;
+  envKey?: string;
+  value?: string;
+};
+
+export type ReactRuntimeConfigOptions = {
+  configFileName?: string;
+  enabled?: boolean;
+  env?: false | ReactRuntimeConfigEnvOptions;
+  schemaFileName?: string;
+  source?: false | RuntimeConfigPathPatternSource;
+  validation?: false | ReactRuntimeConfigValidationOptions;
+  varDir?: string | ReactRuntimeConfigVarDirOptions;
+};
+
+export type ReactRuntimeConfig = {
+  private: Record<string, RuntimeConfigSection>;
+  public: Record<string, RuntimeConfigSection>;
+};
 
 export type CapabilityRouteConfigOptions = CapabilityLoaderOptions & {
   indexRouteFile?: false | string;
@@ -56,6 +116,7 @@ export type LorionReactViteSetup = {
 };
 
 export type DiscoveredCapability = {
+  capabilityDir: string;
   disabled: boolean;
   entryFile: string;
   id: string;
@@ -84,13 +145,16 @@ export type VirtualRootRoute = {
 };
 
 export type ViteResolvedConfig = {
+  env?: Record<string, string | undefined>;
+  envDir?: false | string;
+  mode?: string;
   root: string;
 };
 
 export type VitePlugin = {
   configResolved: (resolvedConfig: ViteResolvedConfig) => void;
   enforce: 'pre';
-  load: (id: string) => string | null;
+  load: (id: string, options?: { ssr?: boolean }) => string | null;
   name: string;
   resolveId: (id: string) => string | undefined;
 };
@@ -98,6 +162,7 @@ export type VitePlugin = {
 export function capabilityLoader(options: CapabilityLoaderOptions = {}): VitePlugin {
   let config: ViteResolvedConfig;
   let capabilities: DiscoveredCapability[] = [];
+  let runtimeConfig: ReactRuntimeConfig = { private: {}, public: {} };
 
   return {
     name: 'lorion-react-capability-loader',
@@ -108,17 +173,78 @@ export function capabilityLoader(options: CapabilityLoaderOptions = {}): VitePlu
         resolveWorkspaceRoot(config.root, options),
         options,
       );
+      runtimeConfig = createReactRuntimeConfig(
+        capabilities,
+        resolveWorkspaceRoot(config.root, options),
+        options.runtimeConfig,
+        config,
+      );
     },
     resolveId(id) {
       if (id === virtualModuleId) return resolvedVirtualModuleId;
+      if (id === runtimeConfigModuleId) return resolvedRuntimeConfigModuleId;
+      if (id === serverRuntimeConfigModuleId) return resolvedServerRuntimeConfigModuleId;
 
       return capabilities.find((capability) => capability.importSpecifier === id)?.entryFile;
     },
-    load(id) {
+    load(id, loadOptions) {
+      if (id === resolvedRuntimeConfigModuleId) return renderRuntimeConfigModule(runtimeConfig);
+      if (id === resolvedServerRuntimeConfigModuleId) {
+        if (!loadOptions?.ssr) {
+          throw new Error(
+            'virtual:capability-runtime-config/server may only be imported from SSR/server code.',
+          );
+        }
+
+        return renderServerRuntimeConfigModule(runtimeConfig);
+      }
       if (id !== resolvedVirtualModuleId) return null;
 
       return renderCapabilityModule(capabilities, resolveSelectionSeed(options));
     },
+  };
+}
+
+export function createReactRuntimeConfig(
+  capabilities: readonly DiscoveredCapability[],
+  workspaceRoot: string,
+  options: false | ReactRuntimeConfigOptions = {},
+  viteConfig: Partial<ViteResolvedConfig> = {},
+): ReactRuntimeConfig {
+  const normalizedOptions = normalizeRuntimeConfigOptions(options);
+  if (!normalizedOptions.enabled) return { private: {}, public: {} };
+
+  const runtimeEnv = resolveRuntimeConfigEnv(viteConfig, normalizedOptions.env ?? {});
+  const sourceFragments = normalizedOptions.source
+    ? loadRuntimeConfigSourceTree(
+        resolveRuntimeConfigPatternSource(workspaceRoot, normalizedOptions, runtimeEnv),
+      )
+    : new Map<string, RuntimeConfigFragment>();
+  const schemaEntries = readRuntimeConfigSchemas(capabilities, normalizedOptions.schemaFileName);
+  const envFragments =
+    normalizedOptions.env === false
+      ? new Map<string, RuntimeConfigFragment>()
+      : createRuntimeConfigEnvFragments(
+          createRuntimeConfigEnvFragmentOptions(
+            capabilities,
+            schemaEntries.schemas,
+            runtimeEnv,
+            normalizedOptions.env,
+          ),
+        );
+  const fragments = mergeRuntimeConfigFragmentMaps(sourceFragments, envFragments);
+
+  validateReactRuntimeConfig(capabilities, fragments, schemaEntries, normalizedOptions.validation);
+
+  const projected = projectRuntimeConfigNamespaces(fragments, {
+    namespaceStrategy: 'nested',
+    scopeIds: capabilities.map((capability) => capability.id),
+  });
+  const { public: publicConfig, ...privateConfig } = projected;
+
+  return {
+    public: publicConfig as Record<string, RuntimeConfigSection>,
+    private: privateConfig as Record<string, RuntimeConfigSection>,
   };
 }
 
@@ -276,6 +402,18 @@ ${variables}
 `;
 }
 
+export function renderRuntimeConfigModule(runtimeConfig: ReactRuntimeConfig): string {
+  return `export const capabilityRuntimeConfig = ${JSON.stringify({ public: runtimeConfig.public })}
+
+export const publicCapabilityRuntimeConfig = capabilityRuntimeConfig.public
+`;
+}
+
+export function renderServerRuntimeConfigModule(runtimeConfig: ReactRuntimeConfig): string {
+  return `export const capabilityServerRuntimeConfig = ${JSON.stringify(runtimeConfig)}
+`;
+}
+
 export function createCapabilityRouteConfig(
   options: CapabilityRouteConfigOptions,
 ): VirtualRootRoute {
@@ -351,6 +489,7 @@ function discoverCapability(entry: DiscoveredDescriptor): DiscoveredCapability {
   const routesDirectory = resolveRouteDirectory(capabilityDir);
 
   return {
+    capabilityDir,
     id: entry.descriptor.id,
     disabled: entry.descriptor.disabled === true,
     entryFile: activationEntry.entryFile,
@@ -360,6 +499,318 @@ function discoverCapability(entry: DiscoveredDescriptor): DiscoveredCapability {
     ...(routesDirectory ? { routesDirectory } : {}),
     variableName: toVariableName(entry.descriptor.id),
   };
+}
+
+type NormalizedReactRuntimeConfigOptions = {
+  configFileName: string;
+  enabled: boolean;
+  env: false | ReactRuntimeConfigEnvOptions;
+  schemaFileName: string;
+  source?: RuntimeConfigPathPatternSource;
+  validation: false | ReactRuntimeConfigValidationOptions;
+  varDir?: string | ReactRuntimeConfigVarDirOptions;
+};
+
+type RuntimeConfigSchemaEntries = {
+  paths: Map<string, string>;
+  schemas: Record<string, object>;
+};
+
+function normalizeRuntimeConfigOptions(
+  options: false | ReactRuntimeConfigOptions,
+): NormalizedReactRuntimeConfigOptions {
+  if (options === false) {
+    return {
+      configFileName: defaultRuntimeConfigFileName,
+      enabled: false,
+      env: false,
+      schemaFileName: defaultRuntimeConfigSchemaFileName,
+      validation: false,
+    };
+  }
+
+  const configFileName = options.configFileName ?? defaultRuntimeConfigFileName;
+
+  return {
+    configFileName,
+    enabled: options.enabled !== false,
+    env: options.env ?? {},
+    schemaFileName: options.schemaFileName ?? defaultRuntimeConfigSchemaFileName,
+    ...(options.source === false
+      ? {}
+      : {
+          source: options.source ?? { paths: [] },
+        }),
+    validation: options.validation === false ? false : (options.validation ?? {}),
+    ...(options.varDir ? { varDir: options.varDir } : {}),
+  };
+}
+
+function resolveRuntimeConfigPatternSource(
+  workspaceRoot: string,
+  options: Pick<NormalizedReactRuntimeConfigOptions, 'configFileName' | 'source' | 'varDir'>,
+  env: Record<string, string | undefined>,
+): RuntimeConfigPathPatternSource {
+  if (!options.source?.paths.length) {
+    const varDir = resolveRuntimeConfigVarDir(workspaceRoot, options.varDir, env);
+
+    return {
+      paths: [join(varDir, 'runtime-config', '*', options.configFileName)],
+    };
+  }
+
+  return {
+    paths: options.source.paths.map((entry: string) =>
+      isAbsolute(entry) ? entry : resolve(workspaceRoot, entry),
+    ),
+  };
+}
+
+function resolveRuntimeConfigVarDir(
+  workspaceRoot: string,
+  options: string | ReactRuntimeConfigVarDirOptions | undefined,
+  env: Record<string, string | undefined>,
+): string {
+  const rawVarDir =
+    typeof options === 'string'
+      ? options
+      : resolveRuntimeConfigVarDirSource({
+          defaultVarDir: resolve(workspaceRoot, '.data'),
+          env: options?.env ?? env,
+          envKey: options?.envKey ?? 'RUNTIME_CONFIG_VAR_DIR',
+          ...(options?.value ? { varDir: options.value } : {}),
+          ...(options?.defaultValue ? { defaultVarDir: options.defaultValue } : {}),
+        }).varDir;
+
+  return isAbsolute(rawVarDir) ? rawVarDir : resolve(workspaceRoot, rawVarDir);
+}
+
+function resolveRuntimeConfigEnv(
+  viteConfig: Partial<ViteResolvedConfig>,
+  options: ReactRuntimeConfigEnvOptions | false,
+): Record<string, string | undefined> {
+  if (options === false) return {};
+  if (options.env) return options.env;
+
+  const mode = viteConfig.mode ?? process.env.NODE_ENV ?? 'development';
+  const envDir =
+    typeof viteConfig.envDir === 'string' ? viteConfig.envDir : (viteConfig.root ?? process.cwd());
+
+  return {
+    ...loadEnv(mode, envDir, ''),
+    ...process.env,
+    ...(viteConfig.env ?? {}),
+  };
+}
+
+function readRuntimeConfigSchemas(
+  capabilities: readonly DiscoveredCapability[],
+  schemaFileName: string,
+): RuntimeConfigSchemaEntries {
+  const paths = new Map<string, string>();
+  const schemas: Record<string, object> = {};
+
+  for (const capability of capabilities) {
+    const schemaPath = resolve(capability.capabilityDir, schemaFileName);
+    const schema = readJsonFile<object>(schemaPath, {
+      onParseError: (error, filePath) => {
+        throw new Error(
+          `RuntimeConfig schema JSON parse error in "${filePath}": ${String(error)}`,
+        );
+      },
+    });
+
+    if (!schema) continue;
+
+    paths.set(capability.id, schemaPath);
+    schemas[capability.id] = schema;
+  }
+
+  return { paths, schemas };
+}
+
+function isJsonSchemaObject(value: unknown): value is { properties?: Record<string, unknown> } {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getRuntimeConfigSchemaSectionKeys(schema: object | undefined, visibility: string): string[] {
+  if (!isJsonSchemaObject(schema)) return [];
+
+  const section = schema.properties?.[visibility];
+  if (!isJsonSchemaObject(section) || !isJsonSchemaObject(section.properties)) return [];
+
+  return Object.keys(section.properties).sort();
+}
+
+function createRuntimeConfigEnvKey(input: {
+  key: string;
+  prefix?: string;
+  scopeId: string;
+}): string {
+  return toSnakeUpperCase([input.prefix, input.scopeId, input.key].filter(Boolean).join('_'));
+}
+
+function createRuntimeConfigEnvFragments(input: {
+  capabilities: readonly DiscoveredCapability[];
+  env: Record<string, string | undefined>;
+  privatePrefix?: string;
+  publicPrefix?: string;
+  schemas: Record<string, object>;
+}): RuntimeConfigFragmentMap {
+  const fragments: RuntimeConfigFragmentMap = new Map();
+
+  for (const capability of input.capabilities) {
+    const schema = input.schemas[capability.id];
+    const publicConfig: RuntimeConfigSection = {};
+    const privateConfig: RuntimeConfigSection = {};
+
+    for (const key of getRuntimeConfigSchemaSectionKeys(schema, 'public')) {
+      const envKey = createRuntimeConfigEnvKey({
+        key,
+        prefix: input.publicPrefix ?? 'VITE',
+        scopeId: capability.id,
+      });
+      const value = input.env[envKey];
+
+      if (value !== undefined) publicConfig[key] = value;
+    }
+
+    for (const key of getRuntimeConfigSchemaSectionKeys(schema, 'private')) {
+      const envKey = createRuntimeConfigEnvKey({
+        key,
+        scopeId: capability.id,
+        ...(input.privatePrefix !== undefined ? { prefix: input.privatePrefix } : {}),
+      });
+      const value = input.env[envKey];
+
+      if (value !== undefined) privateConfig[key] = value;
+    }
+
+    if (Object.keys(publicConfig).length || Object.keys(privateConfig).length) {
+      fragments.set(capability.id, {
+        ...(Object.keys(publicConfig).length ? { public: publicConfig } : {}),
+        ...(Object.keys(privateConfig).length ? { private: privateConfig } : {}),
+      });
+    }
+  }
+
+  return fragments;
+}
+
+function createRuntimeConfigEnvFragmentOptions(
+  capabilities: readonly DiscoveredCapability[],
+  schemas: Record<string, object>,
+  env: Record<string, string | undefined>,
+  options: ReactRuntimeConfigEnvOptions,
+): Parameters<typeof createRuntimeConfigEnvFragments>[0] {
+  return {
+    capabilities,
+    env,
+    ...(options.privatePrefix !== undefined ? { privatePrefix: options.privatePrefix } : {}),
+    ...(options.publicPrefix !== undefined ? { publicPrefix: options.publicPrefix } : {}),
+    schemas,
+  };
+}
+
+function mergeRuntimeConfigSections(
+  left: RuntimeConfigSection | undefined,
+  right: RuntimeConfigSection | undefined,
+): RuntimeConfigSection | undefined {
+  const section = {
+    ...(left ?? {}),
+    ...(right ?? {}),
+  };
+
+  return Object.keys(section).length ? section : undefined;
+}
+
+function mergeRuntimeConfigFragment(
+  left: RuntimeConfigFragment | undefined,
+  right: RuntimeConfigFragment | undefined,
+): RuntimeConfigFragment {
+  const publicConfig = mergeRuntimeConfigSections(left?.public, right?.public);
+  const privateConfig = mergeRuntimeConfigSections(left?.private, right?.private);
+
+  return toRuntimeConfigFragment({
+    ...(publicConfig ? { public: publicConfig } : {}),
+    ...(privateConfig ? { private: privateConfig } : {}),
+  });
+}
+
+function mergeRuntimeConfigFragmentMaps(
+  left: RuntimeConfigFragmentMap,
+  right: RuntimeConfigFragmentMap,
+): RuntimeConfigFragmentMap {
+  const fragments: RuntimeConfigFragmentMap = new Map(left);
+
+  for (const [scopeId, config] of right.entries()) {
+    fragments.set(scopeId, mergeRuntimeConfigFragment(fragments.get(scopeId), config));
+  }
+
+  return fragments;
+}
+
+function getCapabilityRuntimeConfigPolicy(
+  capability: DiscoveredCapability,
+  validation: ReactRuntimeConfigValidationOptions,
+): RuntimeConfigValidationPolicyInput {
+  return (capability.manifest.runtimeConfig as RuntimeConfigValidationPolicyInput | undefined)
+    ?? validation.policy
+    ?? 'optional';
+}
+
+function shouldValidateRuntimeConfigFragment(input: {
+  capability: DiscoveredCapability;
+  fragment: RuntimeConfigFragment | undefined;
+  schema: object | undefined;
+  validation: ReactRuntimeConfigValidationOptions;
+}): boolean {
+  if (!input.schema) return false;
+
+  const mode = resolveRuntimeConfigValidationMode(
+    getCapabilityRuntimeConfigPolicy(input.capability, input.validation),
+  );
+
+  if (mode === 'none' || mode === 'onUse') return false;
+  if (mode === 'startup') return true;
+
+  return Boolean(input.fragment);
+}
+
+function validateReactRuntimeConfig(
+  capabilities: readonly DiscoveredCapability[],
+  fragments: RuntimeConfigFragmentMap,
+  schemas: RuntimeConfigSchemaEntries,
+  validation: false | ReactRuntimeConfigValidationOptions,
+): void {
+  if (validation === false) return;
+
+  const registry = createRuntimeConfigValidatorRegistry(schemas.schemas, {
+    ...(validation.formatError
+      ? {
+          formatError: (target, validationError) =>
+            validation.formatError!(
+              {
+                configPath: `${target.scopeId} runtime config`,
+                schemaPath: schemas.paths.get(target.scopeId) ?? '',
+                scopeId: target.scopeId,
+              },
+              validationError,
+            ),
+        }
+      : {}),
+  });
+
+  for (const capability of capabilities) {
+    const fragment = fragments.get(capability.id);
+    const schema = schemas.schemas[capability.id];
+
+    if (!shouldValidateRuntimeConfigFragment({ capability, fragment, schema, validation })) {
+      continue;
+    }
+
+    registry.assert(capability.id, fragment ?? {});
+  }
 }
 
 function resolveRouteDirectory(capabilityDir: string): string | undefined {
